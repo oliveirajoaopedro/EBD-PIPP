@@ -28,7 +28,6 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
         body { font-family: 'Inter', sans-serif; }
         .recharts-responsive-container { min-height: 250px; }
-        /* Garante que ícones lucide renderizem */
         .lucide { width: 1.25rem; height: 1.25rem; }
     </style>
 </head>
@@ -36,8 +35,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
-        // Acessando Recharts do objeto global window com segurança
+        const { useState, useEffect, useMemo, useRef } = React;
         const { 
             BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
             ResponsiveContainer, LineChart, Line, Cell, PieChart, Pie, Legend 
@@ -78,8 +76,12 @@
             const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
             const [selectedSemester, setSelectedSemester] = useState("2026.1");
             const [newStudentName, setNewStudentName] = useState('');
+            const [registrationClassId, setRegistrationClassId] = useState('');
+            
+            // Referências para o Firebase
+            const dbRef = useRef(null);
+            const appId = window.__app_id || 'ebd-manager-001';
 
-            // Atualiza ícones Lucide sempre que a UI mudar
             useEffect(() => { 
                 if (window.lucide) window.lucide.createIcons(); 
             });
@@ -91,8 +93,8 @@
                 try {
                     const app = initializeApp(firebaseConfig);
                     const db = getFirestore(app);
+                    dbRef.current = db;
                     const auth = getAuth(app);
-                    const appId = window.__app_id || 'ebd-manager-001';
 
                     signInAnonymously(auth).then(() => {
                         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), (snap) => {
@@ -118,18 +120,45 @@
             const filteredAttendance = useMemo(() => attendance.filter(a => a.semester === selectedSemester), [attendance, selectedSemester]);
 
             const toggleAttendance = async (studentId, classId) => {
-                const { getFirestore, doc, setDoc, deleteDoc, initializeApp } = window.FirebaseSDK;
-                const db = getFirestore(initializeApp(firebaseConfig));
-                const appId = window.__app_id || 'ebd-manager-001';
+                if (!dbRef.current) return;
+                const { doc, setDoc, deleteDoc } = window.FirebaseSDK;
                 const attId = `${studentId}_${currentDate}`;
                 
                 const existing = attendance.find(a => a.id === attId);
                 if (existing) {
-                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', attId));
+                    await deleteDoc(doc(dbRef.current, 'artifacts', appId, 'public', 'data', 'attendance', attId));
                 } else {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', attId), {
+                    await setDoc(doc(dbRef.current, 'artifacts', appId, 'public', 'data', 'attendance', attId), {
                         studentId, classId, date: currentDate, semester: selectedSemester, present: true
                     });
+                }
+            };
+
+            const handleAddStudent = async (e) => {
+                e.preventDefault();
+                if (!newStudentName || !registrationClassId || !dbRef.current) return;
+                
+                const { collection, addDoc, Timestamp } = window.FirebaseSDK;
+                try {
+                    await addDoc(collection(dbRef.current, 'artifacts', appId, 'public', 'data', 'students'), {
+                        name: newStudentName,
+                        classId: registrationClassId,
+                        semester: selectedSemester,
+                        createdAt: Timestamp.now()
+                    });
+                    setNewStudentName('');
+                } catch (err) {
+                    console.error("Erro ao adicionar aluno:", err);
+                }
+            };
+
+            const handleDeleteStudent = async (studentId) => {
+                if (!dbRef.current) return;
+                const { doc, deleteDoc } = window.FirebaseSDK;
+                try {
+                    await deleteDoc(doc(dbRef.current, 'artifacts', appId, 'public', 'data', 'students', studentId));
+                } catch (err) {
+                    console.error("Erro ao excluir aluno:", err);
                 }
             };
 
@@ -208,7 +237,7 @@
                     <main className="flex-1 max-w-5xl mx-auto w-full p-4 pb-24">
                         <div className="hidden md:flex bg-white p-1 rounded-2xl shadow-sm border mb-6">
                             {['chamada', 'alunos', 'relatorios'].map(t => (
-                                <button key={t} onClick={() => {setActiveTab(t); setSelectedClass(null); setViewingStats(false);}} className={`flex-1 py-3 rounded-xl font-bold transition-all ${activeTab === t ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>
+                                <button key={t} onClick={() => {setActiveTab(t); setSelectedClass(null); setViewingStats(false);}} className={`flex-1 py-3 rounded-xl font-bold transition-all ${activeTab === t ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500'}`}>
                                     {t === 'chamada' ? 'Chamada' : t === 'alunos' ? 'Alunos' : 'Painel'}
                                 </button>
                             ))}
@@ -224,7 +253,7 @@
                                                 <p className="text-xs text-slate-400 font-bold mb-4 uppercase">{filteredStudents.filter(s => s.classId === cls.id).length} ALUNOS</p>
                                                 <div className="flex gap-2">
                                                     <button onClick={() => setSelectedClass(cls)} className="flex-1 bg-indigo-50 text-indigo-600 py-3 rounded-xl font-bold text-sm">Fazer Chamada</button>
-                                                    <button onClick={() => {setSelectedClass(cls); setViewingStats(true);}} className="bg-slate-100 p-3 rounded-xl"><i data-lucide="trending-up"></i></button>
+                                                    <button onClick={() => {setSelectedClass(cls); setViewingStats(true);}} className="bg-slate-100 p-3 rounded-xl hover:bg-slate-200"><i data-lucide="trending-up"></i></button>
                                                 </div>
                                             </div>
                                         ))}
@@ -235,7 +264,7 @@
                                             <i data-lucide="chevron-left"></i> Voltar para as classes
                                         </button>
                                         <div className="bg-white p-6 rounded-2xl border shadow-sm">
-                                            <h2 className="text-xl font-bold mb-4">Desempenho: {selectedClass.name}</h2>
+                                            <h2 className="text-xl font-bold mb-4 text-slate-800">Desempenho: {selectedClass.name}</h2>
                                             <div className="h-64">
                                                 <ResponsiveContainer width="100%" height="100%">
                                                     <LineChart data={classDetailStats.timeline}>
@@ -243,25 +272,33 @@
                                                         <XAxis dataKey="date" fontSize={10} />
                                                         <YAxis fontSize={10} />
                                                         <Tooltip />
-                                                        <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={4} />
+                                                        <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={4} dot={{ r: 6 }} />
                                                     </LineChart>
                                                 </ResponsiveContainer>
                                             </div>
                                         </div>
                                         <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                                            <div className="p-4 border-b font-bold">Frequência por Aluno</div>
+                                            <div className="p-4 border-b font-bold text-slate-800 flex justify-between">
+                                                <span>Frequência por Aluno</span>
+                                                <span className="text-xs text-slate-400 uppercase font-bold">Média: {classDetailStats.avg} alunos/dia</span>
+                                            </div>
                                             <div className="divide-y">
-                                                {classDetailStats.performance.length === 0 ? <p className="p-8 text-center text-slate-400">Nenhum dado para este período.</p> : classDetailStats.performance.map(s => (
-                                                    <div key={s.id} className="p-4 flex justify-between items-center">
+                                                {classDetailStats.performance.length === 0 ? <p className="p-8 text-center text-slate-400 italic">Nenhum dado registrado para este aluno.</p> : classDetailStats.performance.map(s => (
+                                                    <div key={s.id} className="p-4 flex justify-between items-center group">
                                                         <div>
-                                                            <p className="font-bold">{s.name}</p>
-                                                            {s.alert && <span className="text-[10px] text-red-500 font-black uppercase flex items-center gap-1">
+                                                            <p className="font-bold text-slate-700">{s.name}</p>
+                                                            {s.alert && <span className="text-[10px] text-red-500 font-black uppercase flex items-center gap-1 animate-pulse">
                                                                 <i data-lucide="alert-triangle" className="w-3 h-3"></i>⚠️ Alerta Evasão
                                                             </span>}
                                                         </div>
-                                                        <div className="text-right">
-                                                            <p className="font-black">{s.rate}%</p>
-                                                            <p className="text-[10px] text-slate-400 uppercase font-bold">{s.total} Presenças</p>
+                                                        <div className="text-right flex items-center gap-4">
+                                                            <div>
+                                                                <p className="font-black text-indigo-600">{s.rate}%</p>
+                                                                <p className="text-[10px] text-slate-400 uppercase font-bold">{s.total} Presenças</p>
+                                                            </div>
+                                                            <button onClick={() => handleDeleteStudent(s.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all p-2 bg-red-50 rounded-lg">
+                                                                <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 ))}
@@ -271,17 +308,17 @@
                                 ) : (
                                     <div className="bg-white rounded-2xl shadow-xl overflow-hidden border">
                                         <div className="bg-indigo-600 p-4 text-white flex justify-between items-center font-bold">
-                                            <button onClick={() => setSelectedClass(null)}>← Sair</button>
-                                            <span>{selectedClass.name}</span>
-                                            <span>{filteredStudents.filter(s => s.classId === selectedClass.id).length} Alunos</span>
+                                            <button onClick={() => setSelectedClass(null)} className="hover:underline">← Sair</button>
+                                            <span className="truncate mx-2">{selectedClass.name}</span>
+                                            <span className="whitespace-nowrap bg-indigo-500 px-2 py-1 rounded text-xs">{filteredStudents.filter(s => s.classId === selectedClass.id).length} Alunos</span>
                                         </div>
                                         <div className="divide-y">
-                                            {filteredStudents.filter(s => s.classId === selectedClass.id).length === 0 ? <p className="p-8 text-center text-slate-400">Nenhum aluno cadastrado para este período.</p> : filteredStudents.filter(s => s.classId === selectedClass.id).map(s => {
+                                            {filteredStudents.filter(s => s.classId === selectedClass.id).length === 0 ? <p className="p-12 text-center text-slate-400 italic">Nenhum aluno cadastrado para este período.</p> : filteredStudents.filter(s => s.classId === selectedClass.id).map(s => {
                                                 const isPresent = filteredAttendance.some(a => a.studentId === s.id && a.date === currentDate);
                                                 return (
-                                                    <div key={s.id} className="p-4 flex justify-between items-center">
-                                                        <span className="font-medium">{s.name}</span>
-                                                        <button onClick={() => toggleAttendance(s.id, selectedClass.id)} className={`px-8 py-2 rounded-full font-bold transition-all ${isPresent ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400'}`}>
+                                                    <div key={s.id} className="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                                                        <span className="font-medium text-slate-700">{s.name}</span>
+                                                        <button onClick={() => toggleAttendance(s.id, selectedClass.id)} className={`px-8 py-2 rounded-full font-bold transition-all transform active:scale-95 ${isPresent ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
                                                             {isPresent ? 'Presente' : 'Faltou'}
                                                         </button>
                                                     </div>
@@ -296,42 +333,59 @@
                         {activeTab === 'alunos' && (
                             <div className="space-y-6">
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border">
-                                    <h2 className="font-bold mb-4 flex items-center gap-2">
-                                        <i data-lucide="user-plus" className="text-indigo-600"></i> Novo Cadastro ({selectedSemester})
+                                    <h2 className="font-bold mb-4 flex items-center gap-2 text-slate-800">
+                                        <i data-lucide="user-plus" className="text-indigo-600"></i> Cadastrar Aluno ({selectedSemester})
                                     </h2>
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                        <select onChange={e => setSelectedClass(CLASSES.find(c => c.id === e.target.value))} className="p-4 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <form onSubmit={handleAddStudent} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <select 
+                                            value={registrationClassId}
+                                            onChange={e => setRegistrationClassId(e.target.value)} 
+                                            className="p-4 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                                            required
+                                        >
                                             <option value="">Escolha a Classe</option>
                                             {CLASSES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                         </select>
-                                        <input type="text" placeholder="Nome Completo" className="p-4 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} />
-                                        <button onClick={async () => {
-                                            if(!newStudentName || !selectedClass) return;
-                                            const { getFirestore, collection, addDoc, Timestamp, initializeApp } = window.FirebaseSDK;
-                                            const db = getFirestore(initializeApp(firebaseConfig));
-                                            await addDoc(collection(db, 'artifacts', window.__app_id || 'ebd-manager-001', 'public', 'data', 'students'), {
-                                                name: newStudentName, classId: selectedClass.id, semester: selectedSemester, createdAt: Timestamp.now()
-                                            });
-                                            setNewStudentName('');
-                                        }} className="bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700">Cadastrar Aluno</button>
-                                    </div>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Nome Completo do Aluno" 
+                                            className="p-4 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium" 
+                                            value={newStudentName} 
+                                            onChange={e => setNewStudentName(e.target.value)} 
+                                            required
+                                        />
+                                        <button 
+                                            type="submit"
+                                            className="bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <i data-lucide="plus-circle" className="w-5 h-5"></i> Cadastrar Aluno
+                                        </button>
+                                    </form>
                                 </div>
+
                                 <div className="space-y-4">
                                     {CLASSES.map(cls => {
                                         const classStudents = filteredStudents.filter(s => s.classId === cls.id);
                                         if (classStudents.length === 0) return null;
                                         return (
-                                            <div key={cls.id} className="bg-white rounded-xl border overflow-hidden">
-                                                <div className="bg-slate-50 p-3 font-bold text-xs text-slate-400 uppercase tracking-widest">{cls.name}</div>
+                                            <div key={cls.id} className="bg-white rounded-xl border overflow-hidden shadow-sm">
+                                                <div className="bg-slate-50 p-3 font-bold text-xs text-slate-500 uppercase tracking-widest flex justify-between">
+                                                    <span>{cls.name}</span>
+                                                    <span>{classStudents.length} Alunos</span>
+                                                </div>
                                                 <div className="divide-y">
                                                     {classStudents.sort((a,b) => a.name.localeCompare(b.name)).map(s => (
-                                                        <div key={s.id} className="p-3 flex justify-between items-center text-sm">
-                                                            <span>{s.name}</span>
-                                                            <button onClick={async () => {
-                                                                const { getFirestore, doc, deleteDoc, initializeApp } = window.FirebaseSDK;
-                                                                const db = getFirestore(initializeApp(firebaseConfig));
-                                                                await deleteDoc(doc(db, 'artifacts', window.__app_id || 'ebd-manager-001', 'public', 'data', 'students', s.id));
-                                                            }} className="text-red-300 hover:text-red-500"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                                        <div key={s.id} className="p-3 flex justify-between items-center text-sm group">
+                                                            <span className="text-slate-700 font-medium">{s.name}</span>
+                                                            <button 
+                                                                onClick={() => {
+                                                                    if(window.confirm(`Deseja realmente excluir ${s.name}?`)) handleDeleteStudent(s.id);
+                                                                }} 
+                                                                className="text-slate-300 hover:text-red-600 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                                                                title="Excluir aluno"
+                                                            >
+                                                                <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                            </button>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -345,43 +399,43 @@
                         {activeTab === 'relatorios' && (
                             <div className="space-y-6">
                                 <div className="flex justify-between items-center">
-                                    <h2 className="text-xl font-bold">Relatório Geral {selectedSemester}</h2>
-                                    <button onClick={exportToCSV} className="bg-green-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg">
-                                        <i data-lucide="download" className="w-4 h-4"></i> Exportar Excel
+                                    <h2 className="text-xl font-bold text-slate-800">Relatório Geral {selectedSemester}</h2>
+                                    <button onClick={exportToCSV} className="bg-emerald-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all">
+                                        <i data-lucide="download" className="w-4 h-4"></i> Exportar CSV
                                     </button>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-slate-800">
                                     <div className="bg-white p-5 rounded-2xl border text-center shadow-sm">
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Alunos</p>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Total de Alunos</p>
                                         <p className="text-3xl font-black text-indigo-600">{filteredStudents.length}</p>
                                     </div>
                                     <div className="bg-white p-5 rounded-2xl border text-center shadow-sm">
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Presentes Hoje</p>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Presentes Hoje</p>
                                         <p className="text-3xl font-black text-green-500">{filteredAttendance.filter(a => a.date === currentDate).length}</p>
                                     </div>
                                     <div className="bg-white p-5 rounded-2xl border text-center shadow-sm">
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Frequência</p>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">% de Frequência</p>
                                         <p className="text-3xl font-black text-amber-500">{filteredStudents.length > 0 ? Math.round((filteredAttendance.filter(a => a.date === currentDate).length / filteredStudents.length)*100) : 0}%</p>
                                     </div>
                                     <div className="bg-white p-5 rounded-2xl border text-center shadow-sm">
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Período</p>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Período Ativo</p>
                                         <p className="text-3xl font-black text-slate-800">{selectedSemester}</p>
                                     </div>
                                 </div>
                                 
                                 <div className="bg-white p-6 rounded-2xl border shadow-sm">
-                                    <h3 className="font-bold mb-6 flex items-center gap-2"><i data-lucide="bar-chart-3" className="text-indigo-600"></i> Distribuição por Classe</h3>
-                                    <div className="h-64">
+                                    <h3 className="font-bold mb-6 flex items-center gap-2 text-slate-800"><i data-lucide="bar-chart-3" className="text-indigo-600"></i> Distribuição de Alunos por Classe</h3>
+                                    <div className="h-72">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart data={CLASSES.map((cls, idx) => ({ 
                                                 name: cls.name.split(' (')[0], 
                                                 total: filteredStudents.filter(s => s.classId === cls.id).length 
                                             }))}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                                <XAxis dataKey="name" fontSize={10} />
-                                                <YAxis fontSize={10} />
-                                                <Tooltip />
-                                                <Bar dataKey="total" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                <XAxis dataKey="name" fontSize={10} axisLine={false} tickLine={false} />
+                                                <YAxis fontSize={10} axisLine={false} tickLine={false} />
+                                                <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                                <Bar dataKey="total" name="Total de Alunos" fill="#6366f1" radius={[6, 6, 0, 0]} />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
@@ -390,16 +444,16 @@
                         )}
                     </main>
 
-                    <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t p-3 md:hidden flex justify-around shadow-2xl z-50">
-                        <button onClick={() => {setActiveTab('chamada'); setSelectedClass(null);}} className={`flex flex-col items-center gap-1 ${activeTab === 'chamada' ? 'text-indigo-600' : 'text-slate-400'}`}>
+                    <nav className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t p-3 md:hidden flex justify-around shadow-2xl z-50">
+                        <button onClick={() => {setActiveTab('chamada'); setSelectedClass(null);}} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'chamada' ? 'text-indigo-600 scale-110' : 'text-slate-400'}`}>
                             <i data-lucide="clipboard-check" className="w-6 h-6"></i>
                             <span className="text-[10px] font-bold uppercase">Chamada</span>
                         </button>
-                        <button onClick={() => {setActiveTab('alunos'); setSelectedClass(null);}} className={`flex flex-col items-center gap-1 ${activeTab === 'alunos' ? 'text-indigo-600' : 'text-slate-400'}`}>
+                        <button onClick={() => {setActiveTab('alunos'); setSelectedClass(null);}} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'alunos' ? 'text-indigo-600 scale-110' : 'text-slate-400'}`}>
                             <i data-lucide="users" className="w-6 h-6"></i>
-                            <span className="text-[10px] font-bold uppercase">Gestão</span>
+                            <span className="text-[10px] font-bold uppercase">Alunos</span>
                         </button>
-                        <button onClick={() => {setActiveTab('relatorios'); setSelectedClass(null);}} className={`flex flex-col items-center gap-1 ${activeTab === 'relatorios' ? 'text-indigo-600' : 'text-slate-400'}`}>
+                        <button onClick={() => {setActiveTab('relatorios'); setSelectedClass(null);}} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'relatorios' ? 'text-indigo-600 scale-110' : 'text-slate-400'}`}>
                             <i data-lucide="layout-dashboard" className="w-6 h-6"></i>
                             <span className="text-[10px] font-bold uppercase">Painel</span>
                         </button>
