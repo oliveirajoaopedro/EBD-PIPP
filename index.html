@@ -1,565 +1,415 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import {
-  getFirestore,
-  collection,
-  doc,
-  setDoc,
-  onSnapshot,
-  addDoc,
-  deleteDoc,
-  Timestamp
-} from 'firebase/firestore';
-import {
-  getAuth,
-  signInAnonymously,
-  onAuthStateChanged,
-  signInWithCustomToken
-} from 'firebase/auth';
-import {
-  Users,
-  ClipboardCheck,
-  BarChart3,
-  Plus,
-  Trash2,
-  ChevronRight,
-  Calendar as CalendarIcon,
-  CheckCircle2,
-  XCircle,
-  LayoutDashboard,
-  Lock,
-  LogIn,
-  Download,
-  TrendingUp,
-  AlertTriangle,
-  ChevronLeft,
-  Search
-} from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  LineChart,
-  Line
-} from 'recharts';
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema EBD Pro - PIP</title>
+    
+    <!-- Bibliotecas Necessárias (Ordem de carregamento é CRÍTICA para Recharts) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Firebase (Para salvamento na nuvem) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+        
+        // Configurações globais para o React encontrar o Firebase
+        window.FirebaseSDK = { initializeApp, getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, Timestamp, getAuth, signInAnonymously, onAuthStateChanged };
+    </script>
 
-// --- CONFIGURAÇÃO FIREBASE ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'ebd-manager-001';
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .recharts-responsive-container { min-height: 250px; }
+        /* Garante que ícones lucide renderizem */
+        .lucide { width: 1.25rem; height: 1.25rem; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+    <div id="root"></div>
 
-const CLASSES = [
-  { id: 'infantil-1', name: 'Classe Infantil 1 (1-3 anos)' },
-  { id: 'infantil-2', name: 'Classe Infantil 2 (4-6 anos)' },
-  { id: 'infantil-3', name: 'Classe Infantil 3 (7-11 anos)' },
-  { id: 'adolescentes', name: 'Classe de Adolescentes (12-18 anos)' },
-  { id: 'catecumenos', name: 'Classe de Catecúmenos' },
-  { id: 'adultos-1', name: 'Classe de Adultos 1' },
-  { id: 'adultos-2', name: 'Classe de Adultos 2' },
-];
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        // Acessando Recharts do objeto global window com segurança
+        const { 
+            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
+            ResponsiveContainer, LineChart, Line, Cell, PieChart, Pie, Legend 
+        } = window.Recharts || {};
 
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+        const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : {
+            apiKey: "",
+            authDomain: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: ""
+        };
 
-const APP_LOGIN = "EBD2026";
-const APP_PASSWORD = "pipp2026ebd";
+        const CLASSES = [
+            { id: 'infantil-1', name: 'Classe Infantil 1 (1-3 anos)' },
+            { id: 'infantil-2', name: 'Classe Infantil 2 (4-6 anos)' },
+            { id: 'infantil-3', name: 'Classe Infantil 3 (7-11 anos)' },
+            { id: 'adolescentes', name: 'Classe de Adolescentes (12-18 anos)' },
+            { id: 'catecumenos', name: 'Classe de Catecúmenos' },
+            { id: 'adultos-1', name: 'Classe de Adultos 1' },
+            { id: 'adultos-2', name: 'Classe de Adultos 2' },
+        ];
 
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [loginError, setLoginError] = useState('');
+        const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+        const APP_LOGIN = "EBD2026";
+        const APP_PASSWORD = "pipp2026ebd";
 
-  const [activeTab, setActiveTab] = useState('chamada');
-  const [selectedClass, setSelectedClass] = useState(null);
-  const [viewingStats, setViewingStats] = useState(false);
+        function App() {
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+            const [loginError, setLoginError] = useState('');
+            const [activeTab, setActiveTab] = useState('chamada');
+            const [selectedClass, setSelectedClass] = useState(null);
+            const [viewingStats, setViewingStats] = useState(false);
+            const [students, setStudents] = useState([]);
+            const [attendance, setAttendance] = useState([]);
+            const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
+            const [selectedSemester, setSelectedSemester] = useState("2026.1");
+            const [newStudentName, setNewStudentName] = useState('');
 
-  const [students, setStudents] = useState([]);
-  const [attendance, setAttendance] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [newStudentName, setNewStudentName] = useState('');
-  const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
+            // Atualiza ícones Lucide sempre que a UI mudar
+            useEffect(() => { 
+                if (window.lucide) window.lucide.createIcons(); 
+            });
 
-  // Gestão Semestral
-  const [selectedSemester, setSelectedSemester] = useState("2026.1");
+            useEffect(() => {
+                if (!window.FirebaseSDK || !isAuthenticated) return;
+                const { initializeApp, getFirestore, collection, onSnapshot, getAuth, signInAnonymously } = window.FirebaseSDK;
+                
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    const db = getFirestore(app);
+                    const auth = getAuth(app);
+                    const appId = window.__app_id || 'ebd-manager-001';
 
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (error) { console.error(error); }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
-  }, []);
+                    signInAnonymously(auth).then(() => {
+                        onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), (snap) => {
+                            setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                        });
+                        onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'attendance'), (snap) => {
+                            setAttendance(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                        });
+                    });
+                } catch (e) { console.error("Firebase init error:", e); }
+            }, [isAuthenticated]);
 
-  useEffect(() => {
-    if (!user || !isAuthenticated) return;
-
-    const studentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
-    const attendanceRef = collection(db, 'artifacts', appId, 'public', 'data', 'attendance');
-
-    const unsubStudents = onSnapshot(studentsRef, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setStudents(data);
-      setLoading(false);
-    });
-
-    const unsubAttendance = onSnapshot(attendanceRef, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAttendance(data);
-    });
-
-    return () => { unsubStudents(); unsubAttendance(); };
-  }, [user, isAuthenticated]);
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (loginForm.username === APP_LOGIN && loginForm.password === APP_PASSWORD) {
-      setIsAuthenticated(true);
-    } else {
-      setLoginError('Acesso negado.');
-    }
-  };
-
-  // Filtragem por semestre
-  const filteredStudents = useMemo(() =>
-    students.filter(s => s.semester === selectedSemester),
-    [students, selectedSemester]
-  );
-
-  const filteredAttendance = useMemo(() =>
-    attendance.filter(a => a.semester === selectedSemester),
-    [attendance, selectedSemester]
-  );
-
-  const toggleAttendance = async (studentId, classId) => {
-    const attendanceId = `${studentId}_${currentDate}`;
-    const existing = attendance.find(a => a.id === attendanceId);
-    try {
-      if (existing) {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', attendanceId));
-      } else {
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', attendanceId), {
-          studentId,
-          classId,
-          date: currentDate,
-          semester: selectedSemester,
-          present: true
-        });
-      }
-    } catch (error) { console.error(error); }
-  };
-
-  // Exportação CSV
-  const exportToCSV = () => {
-    const headers = ["Data", "Classe", "Aluno", "Presença"];
-    const rows = filteredAttendance.map(a => {
-      const student = students.find(s => s.id === a.studentId);
-      const className = CLASSES.find(c => c.id === a.classId)?.name;
-      return [a.date, className, student?.name || 'Desconhecido', "Presente"];
-    });
-
-    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `frequencia_ebd_${selectedSemester}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Estatísticas da Classe Selecionada
-  const classDetailStats = useMemo(() => {
-    if (!selectedClass) return null;
-
-    const classStudents = filteredStudents.filter(s => s.classId === selectedClass.id);
-    const classAttendances = filteredAttendance.filter(a => a.classId === selectedClass.id);
-
-    // Agrupar presença por data para o gráfico de linha
-    const dates = [...new Set(classAttendances.map(a => a.date))].sort();
-    const timeline = dates.map(d => ({
-      date: d.split('-').reverse().slice(0,2).join('/'),
-      count: classAttendances.filter(a => a.date === d).length
-    }));
-
-    // Info por aluno
-    const studentPerformance = classStudents.map(s => {
-      const presences = classAttendances.filter(a => a.studentId === s.id);
-      const rate = dates.length > 0 ? Math.round((presences.length / dates.length) * 100) : 0;
-
-      // Checar faltas seguidas (simples check das últimas 3 datas registradas no sistema)
-      const last3Dates = dates.slice(-3);
-      const missingLast3 = last3Dates.length === 3 && last3Dates.every(d => !classAttendances.find(a => a.date === d && a.studentId === s.id));
-
-      return { ...s, rate, missingLast3, total: presences.length };
-    });
-
-    return { timeline, studentPerformance, avgPresence: Math.round(timeline.reduce((acc, curr) => acc + curr.count, 0) / (dates.length || 1)) };
-  }, [selectedClass, filteredStudents, filteredAttendance]);
-
-  // Estatísticas Gerais (Dashboard)
-  const generalStats = useMemo(() => {
-    const stats = CLASSES.map(cls => {
-      const clsStudents = filteredStudents.filter(s => s.classId === cls.id);
-      const clsPresences = filteredAttendance.filter(a => a.classId === cls.id && a.date === currentDate);
-      return {
-        name: cls.name.split(' (')[0],
-        total: clsStudents.length,
-        presentes: clsPresences.length,
-        percent: clsStudents.length > 0 ? Math.round((clsPresences.length / clsStudents.length) * 100) : 0
-      };
-    });
-    return stats;
-  }, [filteredStudents, filteredAttendance, currentDate]);
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
-        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-white">
-          <div className="flex flex-col items-center mb-8">
-            <div className="bg-indigo-600 p-4 rounded-2xl mb-4 shadow-lg">
-              <Lock className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-2xl font-black text-slate-800">EBD Manager</h1>
-            <p className="text-slate-500">Acesso Restrito - PIP</p>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input
-              type="text" placeholder="Usuário"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500"
-              value={loginForm.username}
-              onChange={e => setLoginForm({...loginForm, username: e.target.value})}
-            />
-            <input
-              type="password" placeholder="Senha"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500"
-              value={loginForm.password}
-              onChange={e => setLoginForm({...loginForm, password: e.target.value})}
-            />
-            {loginError && <p className="text-red-500 text-sm text-center">{loginError}</p>}
-            <button className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition-all">Entrar</button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-slate-50 pb-24 md:pb-6 font-sans">
-      {/* Top Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 py-3">
-        <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="bg-indigo-600 p-2 rounded-lg">
-              <ClipboardCheck className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-black text-slate-800 hidden sm:inline">EBD PORTAL</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Seletor Semestral */}
-            <select
-              value={selectedSemester}
-              onChange={(e) => { setSelectedSemester(e.target.value); setSelectedClass(null); setViewingStats(false); }}
-              className="bg-slate-100 border-none rounded-full px-4 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="2025.2">2025.2</option>
-              <option value="2026.1">2026.1</option>
-              <option value="2026.2">2026.2</option>
-            </select>
-
-            <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-full text-xs font-bold text-slate-600">
-              <CalendarIcon className="w-4 h-4" />
-              <input
-                type="date" value={currentDate}
-                onChange={e => setCurrentDate(e.target.value)}
-                className="bg-transparent border-none p-0 w-24 outline-none"
-              />
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto p-4">
-
-        {/* Nav Tabs Desktop */}
-        <div className="hidden md:flex bg-white p-1 rounded-2xl shadow-sm border border-slate-200 mb-6">
-          {['chamada', 'alunos', 'relatorios'].map(t => (
-            <button
-              key={t}
-              onClick={() => { setActiveTab(t); setSelectedClass(null); setViewingStats(false); }}
-              className={`flex-1 py-3 rounded-xl font-bold transition-all ${activeTab === t ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-              {t === 'chamada' ? '📝 Chamada' : t === 'alunos' ? '👥 Gestão' : '📊 Dashboard'}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === 'chamada' && (
-          <div className="space-y-4">
-            {!selectedClass ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {CLASSES.map((cls) => (
-                  <div key={cls.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-                    <div>
-                      <h3 className="font-bold text-slate-800 mb-1">{cls.name}</h3>
-                      <p className="text-xs text-slate-400 uppercase font-bold mb-4">{filteredStudents.filter(s => s.classId === cls.id).length} Alunos</p>
-                    </div>
-                    <div className="flex gap-2 mt-4">
-                      <button
-                        onClick={() => setSelectedClass(cls)}
-                        className="flex-1 bg-indigo-50 text-indigo-600 py-3 rounded-xl font-bold text-sm hover:bg-indigo-100 transition-all"
-                      >
-                        Fazer Chamada
-                      </button>
-                      <button
-                        onClick={() => { setSelectedClass(cls); setViewingStats(true); }}
-                        className="bg-slate-100 text-slate-600 p-3 rounded-xl hover:bg-slate-200 transition-all"
-                        title="Ver Estatísticas"
-                      >
-                        <TrendingUp className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : viewingStats ? (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                <div className="flex items-center gap-4">
-                  <button onClick={() => {setViewingStats(false); setSelectedClass(null);}} className="bg-white p-2 rounded-full border shadow-sm"><ChevronLeft /></button>
-                  <h2 className="text-xl font-bold text-slate-800">Desempenho: {selectedClass.name}</h2>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                    <p className="text-slate-400 text-xs font-bold uppercase mb-1">Média de Presença</p>
-                    <p className="text-2xl font-black text-indigo-600">{classDetailStats.avgPresence} Alunos</p>
-                  </div>
-                  <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
-                    <h4 className="text-sm font-bold text-slate-800 mb-4">Evolução de Frequência</h4>
-                    <div className="h-40">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={classDetailStats.timeline}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="date" fontSize={10} axisLine={false} tickLine={false} />
-                          <YAxis fontSize={10} axisLine={false} tickLine={false} />
-                          <Tooltip contentStyle={{borderRadius: '12px', border: 'none'}} />
-                          <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} dot={{r: 4, fill: '#6366f1'}} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="p-4 border-b font-bold text-slate-800">Engajamento dos Alunos</div>
-                  <div className="divide-y">
-                    {classDetailStats.studentPerformance.sort((a,b) => a.rate - b.rate).map(s => (
-                      <div key={s.id} className="p-4 flex items-center justify-between">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-700">{s.name}</span>
-                          <span className="text-xs text-slate-400">{s.total} presenças registradas</span>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          {s.missingLast3 && (
-                            <div className="flex items-center gap-1 text-red-500 bg-red-50 px-2 py-1 rounded text-[10px] font-bold animate-bounce">
-                              <AlertTriangle className="w-3 h-3" /> ALERTA: 3 FALTAS
-                            </div>
-                          )}
-                          <div className="text-right">
-                            <p className="font-black text-slate-800">{s.rate}%</p>
-                            <div className="w-16 h-1 bg-slate-100 rounded-full">
-                              <div className={`h-full rounded-full ${s.rate > 70 ? 'bg-green-500' : s.rate > 40 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{width: `${s.rate}%`}} />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-                <div className="p-4 bg-indigo-600 text-white flex justify-between items-center">
-                  <button onClick={() => setSelectedClass(null)} className="text-sm font-bold opacity-80 hover:opacity-100">← Voltar</button>
-                  <h2 className="font-bold">{selectedClass.name}</h2>
-                  <div className="w-10"></div>
-                </div>
-                <div className="divide-y p-2">
-                  {filteredStudents.filter(s => s.classId === selectedClass.id).length === 0 ? (
-                    <div className="p-10 text-center text-slate-400 italic">Nenhum aluno neste período.</div>
-                  ) : (
-                    filteredStudents.filter(s => s.classId === selectedClass.id)
-                      .sort((a,b) => a.name.localeCompare(b.name))
-                      .map(student => {
-                        const isPresent = filteredAttendance.some(a => a.studentId === student.id && a.date === currentDate);
-                        return (
-                          <div key={student.id} className="p-4 flex justify-between items-center">
-                            <span className="font-medium text-slate-700">{student.name}</span>
-                            <button
-                              onClick={() => toggleAttendance(student.id, selectedClass.id)}
-                              className={`px-6 py-2 rounded-full font-bold text-sm transition-all ${isPresent ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400'}`}
-                            >
-                              {isPresent ? 'Presente' : 'Marcar'}
-                            </button>
-                          </div>
-                        );
-                      })
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'alunos' && (
-          <div className="space-y-6">
-             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800">
-                <Plus className="w-5 h-5 text-indigo-600" /> Cadastrar Aluno ({selectedSemester})
-              </h2>
-              <form onSubmit={async (e) => {
+            const handleLogin = (e) => {
                 e.preventDefault();
-                if(!newStudentName || !selectedClass) return;
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
-                  name: newStudentName,
-                  classId: selectedClass.id,
-                  semester: selectedSemester,
-                  createdAt: Timestamp.now()
+                if (loginForm.username === APP_LOGIN && loginForm.password === APP_PASSWORD) {
+                    setIsAuthenticated(true);
+                } else {
+                    setLoginError('Usuário ou senha incorretos.');
+                }
+            };
+
+            const filteredStudents = useMemo(() => students.filter(s => s.semester === selectedSemester), [students, selectedSemester]);
+            const filteredAttendance = useMemo(() => attendance.filter(a => a.semester === selectedSemester), [attendance, selectedSemester]);
+
+            const toggleAttendance = async (studentId, classId) => {
+                const { getFirestore, doc, setDoc, deleteDoc, initializeApp } = window.FirebaseSDK;
+                const db = getFirestore(initializeApp(firebaseConfig));
+                const appId = window.__app_id || 'ebd-manager-001';
+                const attId = `${studentId}_${currentDate}`;
+                
+                const existing = attendance.find(a => a.id === attId);
+                if (existing) {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', attId));
+                } else {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance', attId), {
+                        studentId, classId, date: currentDate, semester: selectedSemester, present: true
+                    });
+                }
+            };
+
+            const exportToCSV = () => {
+                const headers = ["Data", "Classe", "Aluno", "Presença"];
+                const rows = filteredAttendance.map(a => {
+                    const student = students.find(s => s.id === a.studentId);
+                    const className = CLASSES.find(c => c.id === a.classId)?.name;
+                    return [a.date, className, student?.name || '---', "Presente"];
                 });
-                setNewStudentName('');
-              }} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <select
-                  className="bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500"
-                  onChange={e => setSelectedClass(CLASSES.find(c => c.id === e.target.value))}
-                  required
-                >
-                  <option value="">Selecione a Classe</option>
-                  {CLASSES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <input
-                  type="text" placeholder="Nome completo"
-                  className="bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={newStudentName}
-                  onChange={e => setNewStudentName(e.target.value)}
-                  required
-                />
-                <button type="submit" className="bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all">Salvar Aluno</button>
-              </form>
-            </div>
+                const csv = [headers, ...rows].map(e => e.join(",")).join("\n");
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ebd_${selectedSemester}.csv`;
+                a.click();
+            };
 
-            <div className="space-y-4">
-              {CLASSES.map(cls => {
-                const clsStudents = filteredStudents.filter(s => s.classId === cls.id);
-                if (clsStudents.length === 0) return null;
+            const classDetailStats = useMemo(() => {
+                if (!selectedClass) return null;
+                const cStudents = filteredStudents.filter(s => s.classId === selectedClass.id);
+                const cAtt = filteredAttendance.filter(a => a.classId === selectedClass.id);
+                const dates = [...new Set(cAtt.map(a => a.date))].sort();
+                const timeline = dates.map(d => ({ date: d.split('-').reverse().slice(0,2).join('/'), count: cAtt.filter(a => a.date === d).length }));
+                const performance = cStudents.map(s => {
+                    const count = cAtt.filter(a => a.studentId === s.id).length;
+                    const last3 = dates.slice(-3);
+                    const alert = last3.length === 3 && last3.every(d => !cAtt.find(a => a.date === d && a.studentId === s.id));
+                    return { ...s, total: count, alert, rate: dates.length > 0 ? Math.round((count/dates.length)*100) : 0 };
+                });
+                return { timeline, performance, avg: Math.round(timeline.reduce((acc, v) => acc + v.count, 0) / (dates.length || 1)) };
+            }, [selectedClass, filteredStudents, filteredAttendance]);
+
+            if (!isAuthenticated) {
                 return (
-                  <div key={cls.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="bg-slate-50 p-3 border-b text-xs font-black text-slate-400 uppercase tracking-widest">{cls.name}</div>
-                    <div className="divide-y">
-                      {clsStudents.sort((a,b) => a.name.localeCompare(b.name)).map(s => (
-                        <div key={s.id} className="p-3 flex justify-between items-center">
-                          <span className="text-slate-700 text-sm font-medium">{s.name}</span>
-                          <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', s.id))} className="text-slate-300 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                    <div className="min-h-screen flex items-center justify-center p-4">
+                        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md">
+                            <div className="text-center mb-8">
+                                <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                                    <i data-lucide="lock" className="text-white w-8 h-8"></i>
+                                </div>
+                                <h1 className="text-2xl font-black">EBD Manager</h1>
+                                <p className="text-slate-500">Acesso PIP 2026</p>
+                            </div>
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <input type="text" placeholder="Usuário" className="w-full p-4 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value})} />
+                                <input type="password" placeholder="Senha" className="w-full p-4 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} />
+                                {loginError && <p className="text-red-500 text-sm text-center font-bold">{loginError}</p>}
+                                <button className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg">Entrar no Sistema</button>
+                            </form>
                         </div>
-                      ))}
                     </div>
-                  </div>
                 );
-              })}
-            </div>
-          </div>
-        )}
+            }
 
-        {activeTab === 'relatorios' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold text-slate-800">Relatório Geral {selectedSemester}</h2>
-              <button
-                onClick={exportToCSV}
-                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:bg-green-700 transition-all"
-              >
-                <Download className="w-4 h-4" /> Baixar Planilha
-              </button>
-            </div>
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <header className="bg-white border-b p-4 sticky top-0 z-50">
+                        <div className="max-w-5xl mx-auto flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <i data-lucide="clipboard-check" className="text-indigo-600"></i>
+                                <span className="font-black text-lg">EBD PORTAL</span>
+                            </div>
+                            <div className="flex gap-2">
+                                <select value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)} className="bg-slate-100 p-2 rounded-lg font-bold text-sm">
+                                    <option value="2025.2">2025.2</option>
+                                    <option value="2026.1">2026.1</option>
+                                    <option value="2026.2">2026.2</option>
+                                </select>
+                                <input type="date" value={currentDate} onChange={e => setCurrentDate(e.target.value)} className="bg-slate-100 p-2 rounded-lg text-sm font-bold" />
+                            </div>
+                        </div>
+                    </header>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center">
-                <p className="text-slate-400 text-[10px] font-black uppercase mb-1">Total Alunos</p>
-                <p className="text-2xl font-black text-indigo-600">{filteredStudents.length}</p>
-              </div>
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center">
-                <p className="text-slate-400 text-[10px] font-black uppercase mb-1">Presentes Hoje</p>
-                <p className="text-2xl font-black text-emerald-500">{filteredAttendance.filter(a => a.date === currentDate).length}</p>
-              </div>
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center">
-                <p className="text-slate-400 text-[10px] font-black uppercase mb-1">% Presença</p>
-                <p className="text-2xl font-black text-amber-500">
-                  {filteredStudents.length > 0 ? Math.round((filteredAttendance.filter(a => a.date === currentDate).length / filteredStudents.length) * 100) : 0}%
-                </p>
-              </div>
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center">
-                <p className="text-slate-400 text-[10px] font-black uppercase mb-1">Classe Líder</p>
-                <p className="text-lg font-black text-indigo-800 truncate">
-                  {generalStats.reduce((prev, current) => (prev.percent > current.percent) ? prev : current, {name: '---'}).name}
-                </p>
-              </div>
-            </div>
+                    <main className="flex-1 max-w-5xl mx-auto w-full p-4 pb-24">
+                        <div className="hidden md:flex bg-white p-1 rounded-2xl shadow-sm border mb-6">
+                            {['chamada', 'alunos', 'relatorios'].map(t => (
+                                <button key={t} onClick={() => {setActiveTab(t); setSelectedClass(null); setViewingStats(false);}} className={`flex-1 py-3 rounded-xl font-bold transition-all ${activeTab === t ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>
+                                    {t === 'chamada' ? 'Chamada' : t === 'alunos' ? 'Alunos' : 'Painel'}
+                                </button>
+                            ))}
+                        </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-indigo-600" /> Presença por Classe (%) em {currentDate}</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={generalStats}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="name" fontSize={10} axisLine={false} tickLine={false} />
-                    <YAxis domain={[0, 100]} fontSize={10} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none'}} />
-                    <Bar dataKey="percent" name="Presença (%)" radius={[6,6,0,0]}>
-                      {generalStats.map((entry, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
+                        {activeTab === 'chamada' && (
+                            <div className="space-y-4">
+                                {!selectedClass ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {CLASSES.map(cls => (
+                                            <div key={cls.id} className="bg-white p-5 rounded-2xl border shadow-sm">
+                                                <h3 className="font-bold mb-1 text-slate-800">{cls.name}</h3>
+                                                <p className="text-xs text-slate-400 font-bold mb-4 uppercase">{filteredStudents.filter(s => s.classId === cls.id).length} ALUNOS</p>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => setSelectedClass(cls)} className="flex-1 bg-indigo-50 text-indigo-600 py-3 rounded-xl font-bold text-sm">Fazer Chamada</button>
+                                                    <button onClick={() => {setSelectedClass(cls); setViewingStats(true);}} className="bg-slate-100 p-3 rounded-xl"><i data-lucide="trending-up"></i></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : viewingStats ? (
+                                    <div className="space-y-6">
+                                        <button onClick={() => {setSelectedClass(null); setViewingStats(false);}} className="text-indigo-600 font-bold flex items-center gap-2">
+                                            <i data-lucide="chevron-left"></i> Voltar para as classes
+                                        </button>
+                                        <div className="bg-white p-6 rounded-2xl border shadow-sm">
+                                            <h2 className="text-xl font-bold mb-4">Desempenho: {selectedClass.name}</h2>
+                                            <div className="h-64">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <LineChart data={classDetailStats.timeline}>
+                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                        <XAxis dataKey="date" fontSize={10} />
+                                                        <YAxis fontSize={10} />
+                                                        <Tooltip />
+                                                        <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={4} />
+                                                    </LineChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        </div>
+                                        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                                            <div className="p-4 border-b font-bold">Frequência por Aluno</div>
+                                            <div className="divide-y">
+                                                {classDetailStats.performance.length === 0 ? <p className="p-8 text-center text-slate-400">Nenhum dado para este período.</p> : classDetailStats.performance.map(s => (
+                                                    <div key={s.id} className="p-4 flex justify-between items-center">
+                                                        <div>
+                                                            <p className="font-bold">{s.name}</p>
+                                                            {s.alert && <span className="text-[10px] text-red-500 font-black uppercase flex items-center gap-1">
+                                                                <i data-lucide="alert-triangle" className="w-3 h-3"></i>⚠️ Alerta Evasão
+                                                            </span>}
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <p className="font-black">{s.rate}%</p>
+                                                            <p className="text-[10px] text-slate-400 uppercase font-bold">{s.total} Presenças</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-2xl shadow-xl overflow-hidden border">
+                                        <div className="bg-indigo-600 p-4 text-white flex justify-between items-center font-bold">
+                                            <button onClick={() => setSelectedClass(null)}>← Sair</button>
+                                            <span>{selectedClass.name}</span>
+                                            <span>{filteredStudents.filter(s => s.classId === selectedClass.id).length} Alunos</span>
+                                        </div>
+                                        <div className="divide-y">
+                                            {filteredStudents.filter(s => s.classId === selectedClass.id).length === 0 ? <p className="p-8 text-center text-slate-400">Nenhum aluno cadastrado para este período.</p> : filteredStudents.filter(s => s.classId === selectedClass.id).map(s => {
+                                                const isPresent = filteredAttendance.some(a => a.studentId === s.id && a.date === currentDate);
+                                                return (
+                                                    <div key={s.id} className="p-4 flex justify-between items-center">
+                                                        <span className="font-medium">{s.name}</span>
+                                                        <button onClick={() => toggleAttendance(s.id, selectedClass.id)} className={`px-8 py-2 rounded-full font-bold transition-all ${isPresent ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400'}`}>
+                                                            {isPresent ? 'Presente' : 'Faltou'}
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
-      {/* Mobile Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-200 flex justify-around p-3 md:hidden z-40">
-        {[
-          {id: 'chamada', icon: ClipboardCheck, label: 'Chamada'},
-          {id: 'alunos', icon: Users, label: 'Alunos'},
-          {id: 'relatorios', icon: BarChart3, label: 'Dash'}
-        ].map(item => (
-          <button
-            key={item.id}
-            onClick={() => { setActiveTab(item.id); setSelectedClass(null); setViewingStats(false); }}
-            className={`flex flex-col items-center gap-1 ${activeTab === item.id ? 'text-indigo-600' : 'text-slate-400'}`}
-          >
-            <item.icon className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase">{item.label}</span>
-          </button>
-        ))}
-      </nav>
-    </div>
-  );
-}
+                        {activeTab === 'alunos' && (
+                            <div className="space-y-6">
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border">
+                                    <h2 className="font-bold mb-4 flex items-center gap-2">
+                                        <i data-lucide="user-plus" className="text-indigo-600"></i> Novo Cadastro ({selectedSemester})
+                                    </h2>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <select onChange={e => setSelectedClass(CLASSES.find(c => c.id === e.target.value))} className="p-4 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500">
+                                            <option value="">Escolha a Classe</option>
+                                            {CLASSES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                        </select>
+                                        <input type="text" placeholder="Nome Completo" className="p-4 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} />
+                                        <button onClick={async () => {
+                                            if(!newStudentName || !selectedClass) return;
+                                            const { getFirestore, collection, addDoc, Timestamp, initializeApp } = window.FirebaseSDK;
+                                            const db = getFirestore(initializeApp(firebaseConfig));
+                                            await addDoc(collection(db, 'artifacts', window.__app_id || 'ebd-manager-001', 'public', 'data', 'students'), {
+                                                name: newStudentName, classId: selectedClass.id, semester: selectedSemester, createdAt: Timestamp.now()
+                                            });
+                                            setNewStudentName('');
+                                        }} className="bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700">Cadastrar Aluno</button>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    {CLASSES.map(cls => {
+                                        const classStudents = filteredStudents.filter(s => s.classId === cls.id);
+                                        if (classStudents.length === 0) return null;
+                                        return (
+                                            <div key={cls.id} className="bg-white rounded-xl border overflow-hidden">
+                                                <div className="bg-slate-50 p-3 font-bold text-xs text-slate-400 uppercase tracking-widest">{cls.name}</div>
+                                                <div className="divide-y">
+                                                    {classStudents.sort((a,b) => a.name.localeCompare(b.name)).map(s => (
+                                                        <div key={s.id} className="p-3 flex justify-between items-center text-sm">
+                                                            <span>{s.name}</span>
+                                                            <button onClick={async () => {
+                                                                const { getFirestore, doc, deleteDoc, initializeApp } = window.FirebaseSDK;
+                                                                const db = getFirestore(initializeApp(firebaseConfig));
+                                                                await deleteDoc(doc(db, 'artifacts', window.__app_id || 'ebd-manager-001', 'public', 'data', 'students', s.id));
+                                                            }} className="text-red-300 hover:text-red-500"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'relatorios' && (
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-xl font-bold">Relatório Geral {selectedSemester}</h2>
+                                    <button onClick={exportToCSV} className="bg-green-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg">
+                                        <i data-lucide="download" className="w-4 h-4"></i> Exportar Excel
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-slate-800">
+                                    <div className="bg-white p-5 rounded-2xl border text-center shadow-sm">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Alunos</p>
+                                        <p className="text-3xl font-black text-indigo-600">{filteredStudents.length}</p>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-2xl border text-center shadow-sm">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Presentes Hoje</p>
+                                        <p className="text-3xl font-black text-green-500">{filteredAttendance.filter(a => a.date === currentDate).length}</p>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-2xl border text-center shadow-sm">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Frequência</p>
+                                        <p className="text-3xl font-black text-amber-500">{filteredStudents.length > 0 ? Math.round((filteredAttendance.filter(a => a.date === currentDate).length / filteredStudents.length)*100) : 0}%</p>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-2xl border text-center shadow-sm">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Período</p>
+                                        <p className="text-3xl font-black text-slate-800">{selectedSemester}</p>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-white p-6 rounded-2xl border shadow-sm">
+                                    <h3 className="font-bold mb-6 flex items-center gap-2"><i data-lucide="bar-chart-3" className="text-indigo-600"></i> Distribuição por Classe</h3>
+                                    <div className="h-64">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={CLASSES.map((cls, idx) => ({ 
+                                                name: cls.name.split(' (')[0], 
+                                                total: filteredStudents.filter(s => s.classId === cls.id).length 
+                                            }))}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                <XAxis dataKey="name" fontSize={10} />
+                                                <YAxis fontSize={10} />
+                                                <Tooltip />
+                                                <Bar dataKey="total" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t p-3 md:hidden flex justify-around shadow-2xl z-50">
+                        <button onClick={() => {setActiveTab('chamada'); setSelectedClass(null);}} className={`flex flex-col items-center gap-1 ${activeTab === 'chamada' ? 'text-indigo-600' : 'text-slate-400'}`}>
+                            <i data-lucide="clipboard-check" className="w-6 h-6"></i>
+                            <span className="text-[10px] font-bold uppercase">Chamada</span>
+                        </button>
+                        <button onClick={() => {setActiveTab('alunos'); setSelectedClass(null);}} className={`flex flex-col items-center gap-1 ${activeTab === 'alunos' ? 'text-indigo-600' : 'text-slate-400'}`}>
+                            <i data-lucide="users" className="w-6 h-6"></i>
+                            <span className="text-[10px] font-bold uppercase">Gestão</span>
+                        </button>
+                        <button onClick={() => {setActiveTab('relatorios'); setSelectedClass(null);}} className={`flex flex-col items-center gap-1 ${activeTab === 'relatorios' ? 'text-indigo-600' : 'text-slate-400'}`}>
+                            <i data-lucide="layout-dashboard" className="w-6 h-6"></i>
+                            <span className="text-[10px] font-bold uppercase">Painel</span>
+                        </button>
+                    </nav>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
