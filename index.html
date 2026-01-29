@@ -3,375 +3,460 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EBD Pro - Sincronização Google Sheets</title>
-    
-    <!-- Bibliotecas Necessárias (Requer Internet para carregar o visual) -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <title>EBD - PIPP Acesso Restrito</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script src="https://unpkg.com/lucide@0.263.1/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-        .recharts-responsive-container { min-height: 250px; }
-        .lucide { width: 1.25rem; height: 1.25rem; vertical-align: middle; }
-        
-        /* Custom Scrollbar */
-        .custom-scroll::-webkit-scrollbar { width: 4px; }
-        .custom-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        
-        .active-press { transform: scale(0.96); transition: transform 0.1s; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Toggle Switch */
+        .toggle-checkbox:checked { right: 0; border-color: #4f46e5; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #4f46e5; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900">
-    <div id="root"></div>
+<body class="text-slate-900 min-h-screen flex flex-col">
 
-    <!-- O Script deve ser do tipo text/babel para o navegador processar o React -->
+    <div id="root" class="flex-grow flex flex-col"></div>
+
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
-        const { 
-            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
-            ResponsiveContainer, LineChart, Line, Cell, PieChart, Pie, Legend 
-        } = window.Recharts || {};
+        // ==========================================================
+        // *** IMPORTANTE: COLOQUE SUA URL AQUI ***
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqe2CmqgBBNaL90jnyUBndfsGYSejfqL_C4v60UyeIoQktKGjIG6XFVQPCya4NKrn-nw/exec";
+        // ==========================================================
 
-        // URL da sua API do Google Apps Script
-        const API_URL = "https://script.google.com/macros/s/AKfycby1PFjnKIbv0jbr3k1cs0n0lnosRDbDWfKIefBYL55Z7cm_PJwaU-IR_08MaVj5luE4FQ/exec";
+        const { useState, useEffect, useRef, useMemo } = React;
 
-        const TURMAS = [
-            { id: 'infantil-1', name: 'Classe Infantil 1 (1-3 anos)' },
-            { id: 'infantil-2', name: 'Classe Infantil 2 (4-6 anos)' },
-            { id: 'infantil-3', name: 'Classe Infantil 3 (7-11 anos)' },
-            { id: 'adolescentes', name: 'Classe de Adolescentes (12-18 anos)' },
-            { id: 'catecumenos', name: 'Classe de Catecúmenos' },
-            { id: 'adultos-1', name: 'Classe de Adultos 1' },
-            { id: 'adultos-2', name: 'Classe de Adultos 2' },
-        ];
+        // ==========================================================
+        // COMPONENTE DE ÍCONE BLINDADO
+        // ==========================================================
+        const Icon = ({ name, className }) => {
+            try {
+                const iconName = useMemo(() => {
+                    if(!name) return "";
+                    return name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+                }, [name]);
 
-        const CORES_GRAFICO = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
-        const LOGIN_ACESSO = "EBD2026";
-        const SENHA_ACESSO = "pipp2026ebd";
+                const svgHtml = useMemo(() => {
+                    if (window.lucide && window.lucide.icons && window.lucide.icons[iconName]) {
+                        return window.lucide.icons[iconName].toSvg({ class: className });
+                    }
+                    return null;
+                }, [iconName, className]);
 
-        function App() {
-            const [autenticado, setAutenticado] = useState(false);
-            const [formLogin, setFormLogin] = useState({ user: '', pass: '' });
-            const [erroLogin, setErroLogin] = useState('');
-            const [abaAtiva, setAbaAtiva] = useState('chamada');
-            const [turmaSelecionada, setTurmaSelecionada] = useState(null);
-            const [verEstatisticas, setVerEstatisticas] = useState(false);
-            
-            const [alunos, setAlunos] = useState([]);
-            const [presencas, setPresencas] = useState([]);
-            const [carregando, setCarregando] = useState(false);
-            const [sincronizandoId, setSincronizandoId] = useState(null); 
-
-            const [dataAtual, setDataAtual] = useState(new Date().toISOString().split('T')[0]);
-            const [semestreAtual, setSemestreAtual] = useState("2026.1");
-
-            useEffect(() => { 
-                if (window.lucide) window.lucide.createIcons(); 
-                if (autenticado) carregarDados();
-            }, [autenticado]);
-
-            const carregarDados = async () => {
-                setCarregando(true);
-                try {
-                    const res = await fetch(`${API_URL}?t=${Date.now()}`);
-                    const json = await res.json();
-                    setAlunos(json.students || []);
-                    setPresencas(json.attendance || []);
-                } catch (error) {
-                    console.error("Erro ao sincronizar dados:", error);
-                } finally {
-                    setCarregando(false);
-                }
-            };
-
-            const realizarLogin = (e) => {
-                e.preventDefault();
-                if (formLogin.user === LOGIN_ACESSO && formLogin.pass === SENHA_ACESSO) {
-                    setAutenticado(true);
-                } else {
-                    setErroLogin('Utilizador ou senha incorretos.');
-                }
-            };
-
-            const alunosFiltrados = useMemo(() => 
-                alunos.filter(a => a.semester === semestreAtual), 
-                [alunos, semestreAtual]
-            );
-
-            const presencasFiltradas = useMemo(() => 
-                presencas.filter(p => p.semester === semestreAtual), 
-                [presencas, semestreAtual]
-            );
-
-            const alternarPresenca = async (alunoId, turmaId) => {
-                const idRegistro = `${alunoId}_${dataAtual}`;
-                setSincronizandoId(alunoId);
-
-                const jaPresente = presencas.some(p => p.id === idRegistro);
-                setPresencas(prev => {
-                    if (jaPresente) return prev.filter(p => p.id !== idRegistro);
-                    return [...prev, { id: idRegistro, studentId: alunoId, classId: turmaId, date: dataAtual, semester: semestreAtual }];
-                });
-
-                try {
-                    await fetch(API_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        body: JSON.stringify({
-                            action: 'toggle',
-                            id: idRegistro,
-                            studentId: alunoId,
-                            classId: turmaId,
-                            date: dataAtual,
-                            semester: semestreAtual
-                        })
-                    });
-                } catch (error) {
-                    alert("Erro ao sincronizar com a Planilha.");
-                    carregarDados();
-                } finally {
-                    setSincronizandoId(null);
-                }
-            };
-
-            const estatisticasTurma = useMemo(() => {
-                if (!turmaSelecionada) return null;
-                const listaAlunos = alunosFiltrados.filter(a => a.classId === turmaSelecionada.id);
-                const listaPresencas = presencasFiltradas.filter(p => p.classId === turmaSelecionada.id);
-                const datasDistintas = [...new Set(listaPresencas.map(p => p.date))].sort();
-                
-                const timeline = datasDistintas.map(d => ({ 
-                    dataLabel: d.split('-').reverse().slice(0,2).join('/'), 
-                    total: listaPresencas.filter(p => p.date === d).length 
-                }));
-
-                const ranking = listaAlunos.map(a => {
-                    const totalPresencas = listaPresencas.filter(p => p.studentId == a.id).length;
-                    const ultimas3 = datasDistintas.slice(-3);
-                    const emAlerta = ultimas3.length === 3 && ultimas3.every(d => !listaPresencas.find(p => p.date === d && p.studentId == a.id));
-                    return { ...a, total: totalPresencas, emAlerta, percentual: datasDistintas.length > 0 ? Math.round((totalPresencas / datasDistintas.length) * 100) : 0 };
-                });
-
-                return { timeline, ranking, media: Math.round(timeline.reduce((acc, v) => acc + v.total, 0) / (datasDistintas.length || 1)) };
-            }, [turmaSelecionada, alunosFiltrados, presencasFiltradas]);
-
-            if (!autenticado) {
-                return (
-                    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-100">
-                        <div className="bg-white p-8 rounded-[2rem] shadow-2xl w-full max-w-md border border-white">
-                            <div className="text-center mb-8">
-                                <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-indigo-200">
-                                    <i data-lucide="lock" className="text-white w-8 h-8"></i>
-                                </div>
-                                <h1 className="text-2xl font-black text-slate-800 tracking-tight">EBD Online</h1>
-                                <p className="text-slate-400 font-medium text-sm">Controle de Frequência PIP</p>
-                            </div>
-                            <form onSubmit={realizarLogin} className="space-y-4">
-                                <input type="text" placeholder="Utilizador" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" value={formLogin.user} onChange={e => setFormLogin({...formLogin, user: e.target.value})} />
-                                <input type="password" placeholder="Palavra-passe" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" value={formLogin.pass} onChange={e => setFormLogin({...formLogin, pass: e.target.value})} />
-                                {erroLogin && <p className="text-red-500 text-xs text-center font-bold bg-red-50 py-2 rounded-lg">{erroLogin}</p>}
-                                <button className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-100 active:scale-95 transition-transform">Entrar no Sistema</button>
-                            </form>
-                        </div>
-                    </div>
-                );
+                if (!svgHtml) return <span className="inline-block w-4 h-4 bg-gray-200 rounded-full opacity-50"></span>;
+                return <span dangerouslySetInnerHTML={{ __html: svgHtml }} className="inline-flex items-center justify-center" />;
+            } catch (e) {
+                return <span></span>;
             }
+        };
+
+        // ==========================================================
+        // TELA DE LOGIN
+        // ==========================================================
+        const LoginScreen = ({ onLogin }) => {
+            const [user, setUser] = useState('');
+            const [pass, setPass] = useState('');
+            const [error, setError] = useState('');
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (user.toUpperCase() === 'PIPPEBD' && pass === '@1934') {
+                    onLogin();
+                } else {
+                    setError('Acesso negado. Verifique os dados.');
+                    setPass('');
+                }
+            };
 
             return (
-                <div className="min-h-screen flex flex-col bg-slate-50">
-                    <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-50 flex justify-between items-center shadow-sm backdrop-blur-md bg-white/90">
-                        <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-xl text-white shadow-sm ${carregando ? 'bg-amber-500 animate-spin' : 'bg-indigo-600'}`}>
-                                <i data-lucide="refresh-cw" className="w-4 h-4"></i>
+                <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
+                    <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-slate-100 fade-in">
+                        <div className="text-center mb-8">
+                            <div className="bg-indigo-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-600">
+                                <Icon name="lock" className="w-8 h-8" />
                             </div>
-                            <div className="hidden sm:block">
-                                <h2 className="font-black text-slate-800 text-xs leading-none">EBD PORTAL</h2>
-                            </div>
+                            <h1 className="text-2xl font-black text-slate-800">Área Restrita</h1>
+                            <p className="text-slate-400 text-sm mt-1">Acesso exclusivo para professores</p>
                         </div>
-                        <div className="flex gap-2">
-                            <select value={semestreAtual} onChange={e => {setSemestreAtual(e.target.value); setTurmaSelecionada(null);}} className="bg-slate-100 border-none p-2 px-3 rounded-xl font-black text-[10px] text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500">
-                                <option value="2026.1">2026.1</option>
-                                <option value="2026.2">2026.2</option>
-                            </select>
-                            <div className="bg-slate-100 p-2 px-3 rounded-xl flex items-center gap-2">
-                                <i data-lucide="calendar" className="w-3 h-3 text-slate-400"></i>
-                                <input type="date" value={dataAtual} onChange={e => setDataAtual(e.target.value)} className="bg-transparent border-none p-0 text-[10px] font-black text-slate-600 outline-none w-24" />
+
+                        <form onSubmit={handleLogin} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Usuário</label>
+                                <div className="relative">
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icon name="user" className="w-4 h-4"/></div>
+                                    <input
+                                        type="text"
+                                        value={user}
+                                        onChange={(e) => setUser(e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="Digite seu usuário"
+                                    />
+                                </div>
                             </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Senha</label>
+                                <div className="relative">
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icon name="key" className="w-4 h-4"/></div>
+                                    <input
+                                        type="password"
+                                        value={pass}
+                                        onChange={(e) => setPass(e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="Digite sua senha"
+                                    />
+                                </div>
+                            </div>
+
+                            {error && (
+                                <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl flex items-center gap-2 font-medium">
+                                    <Icon name="alert-circle" className="w-4 h-4" />
+                                    {error}
+                                </div>
+                            )}
+
+                            <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-indigo-700 transition-all transform active:scale-[0.98] mt-4 flex justify-center items-center gap-2">
+                                Entrar no Sistema <Icon name="arrow-right" className="w-4 h-4" />
+                            </button>
+                        </form>
+
+                        <div className="mt-8 text-center border-t border-slate-100 pt-6">
+                            <p className="text-xs text-slate-300 font-bold uppercase tracking-widest">PIPP EBD 2026</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================================
+        // APP PRINCIPAL (CORRIGIDO)
+        // ==========================================================
+        const App = () => {
+            // ESTADOS (Hooks devem ficar sempre no topo)
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [activeTab, setActiveTab] = useState('chamada');
+            const [loading, setLoading] = useState(false);
+            const [message, setMessage] = useState(null);
+
+            const [formData, setFormData] = useState({
+                professor: '',
+                dataAula: new Date().toISOString().split('T')[0],
+                ano: 2026,
+                semestre: 1,
+                turma: ''
+            });
+
+            const [alunos, setAlunos] = useState([]);
+            const [dashboardData, setDashboardData] = useState(null);
+
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            // FUNÇÕES DE LÓGICA
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({ ...prev, [name]: value }));
+                if (name === 'turma') setAlunos([]);
+            };
+
+            const carregarAlunos = async () => {
+                if (!formData.turma) {
+                    setMessage({ type: 'error', text: 'Selecione uma turma.' });
+                    return;
+                }
+
+                setLoading(true);
+                setMessage(null);
+                setAlunos([]);
+
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "buscar_alunos", turma: formData.turma })
+                    });
+
+                    const data = await res.json();
+
+                    if (data.alunos && Array.isArray(data.alunos)) {
+                        if (data.alunos.length > 0) {
+                            setAlunos(data.alunos.map(nome => ({ nome, presente: true })));
+                        } else {
+                            setMessage({ type: 'info', text: 'Nenhum aluno nesta turma.' });
+                        }
+                    } else {
+                         setMessage({ type: 'info', text: 'Nenhum dado encontrado ou erro.' });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const togglePresenca = (index) => {
+                setAlunos(prev => prev.map((aluno, i) =>
+                    i === index ? { ...aluno, presente: !aluno.presente } : aluno
+                ));
+            };
+
+            const salvarChamada = async () => {
+                if (!formData.professor) {
+                    setMessage({ type: 'error', text: 'Preencha o nome do professor.' });
+                    return;
+                }
+
+                setLoading(true);
+                setMessage({ type: 'info', text: 'Salvando...' });
+
+                const payload = {
+                    action: "salvar_chamada",
+                    ...formData,
+                    listaPresenca: alunos.map(a => ({
+                        aluno: a.nome,
+                        status: a.presente ? "Presente" : "Ausente"
+                    }))
+                };
+
+                try {
+                    await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    setMessage({ type: 'success', text: 'Chamada Salva!' });
+                    setAlunos([]);
+                    setFormData(prev => ({...prev, turma: ''}));
+                    setTimeout(() => setMessage(null), 3000);
+                } catch (error) {
+                    setMessage({ type: 'error', text: 'Erro ao salvar.' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const carregarDashboard = async () => {
+                setLoading(true);
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "get_dashboard" })
+                    });
+                    const data = await res.json();
+                    if(data.result === 'success') setDashboardData(data);
+                } catch (error) {
+                    console.error(error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // --- HOOKS (EFEITOS) NO TOPO ---
+            // IMPORTANTE: Eles devem ser declarados ANTES de qualquer "return"
+
+            useEffect(() => {
+                // Só carrega dashboard se estiver logado e na aba certa
+                if (isLoggedIn && activeTab === 'dashboard') {
+                    carregarDashboard();
+                }
+            }, [activeTab, isLoggedIn]);
+
+            useEffect(() => {
+                if (isLoggedIn && activeTab === 'dashboard' && dashboardData && chartRef.current) {
+                    if (chartInstance.current) chartInstance.current.destroy();
+
+                    const labels = Object.keys(dashboardData.statsPorTurma);
+                    const dataPoints = labels.map(t => {
+                        const s = dashboardData.statsPorTurma[t];
+                        return s.total > 0 ? (s.presentes / s.total * 100).toFixed(1) : 0;
+                    });
+
+                    chartInstance.current = new Chart(chartRef.current, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: '% Presença',
+                                data: dataPoints,
+                                backgroundColor: '#4f46e5',
+                                borderRadius: 5,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: { y: { beginAtZero: true, max: 100 } }
+                        }
+                    });
+                }
+            }, [dashboardData, activeTab, isLoggedIn]);
+
+
+            // --- RENDERIZAÇÃO CONDICIONAL ---
+            // Agora que todos os hooks foram declarados, podemos retornar a tela de login
+            if (!isLoggedIn) {
+                return <LoginScreen onLogin={() => setIsLoggedIn(true)} />;
+            }
+
+            // --- TELA PRINCIPAL (APÓS LOGIN) ---
+            return (
+                <div className="flex flex-col min-h-screen fade-in">
+                    {/* Header */}
+                    <header className="bg-indigo-700 text-white p-6 shadow-lg relative overflow-hidden">
+                        <div className="absolute inset-0 bg-indigo-900/30"></div>
+                        <div className="relative z-10 max-w-3xl mx-auto flex justify-between items-center">
+                            <div>
+                                <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
+                                    <Icon name="book-open" className="w-8 h-8 text-indigo-300" />
+                                    EBD Digital
+                                </h1>
+                                <p className="text-indigo-100 text-sm font-medium mt-1 pl-10">PIPP - Planaltina DF</p>
+                            </div>
+                            <button onClick={() => setIsLoggedIn(false)} className="bg-indigo-800 p-2 rounded-lg hover:bg-indigo-900 transition text-xs font-bold uppercase flex items-center gap-2">
+                                <Icon name="log-out" className="w-4 h-4" /> Sair
+                            </button>
                         </div>
                     </header>
 
-                    <main className="flex-1 max-w-5xl mx-auto w-full p-4 pb-32">
-                        <div className="hidden md:flex bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 mb-6 gap-2">
-                            {['chamada', 'relatorios'].map(tab => (
-                                <button key={tab} onClick={() => {setAbaAtiva(tab); setTurmaSelecionada(null); setVerEstatisticas(false);}} className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${abaAtiva === tab ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}>
-                                    {tab === 'chamada' ? '📝 Chamada' : '📊 Dashboard Geral'}
-                                </button>
-                            ))}
+                    <main className="max-w-3xl mx-auto px-4 -mt-6 w-full flex-grow relative z-20 pb-12">
+
+                        {/* Abas */}
+                        <div className="flex bg-white p-1 rounded-2xl shadow-lg mb-6 border border-slate-100">
+                            <button onClick={() => setActiveTab('chamada')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'chamada' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                <Icon name="check-circle" className="w-5 h-5" /> Chamada
+                            </button>
+                            <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                <Icon name="bar-chart-2" className="w-5 h-5" /> Estatísticas
+                            </button>
                         </div>
 
-                        {carregando && !alunos.length ? (
-                            <div className="flex flex-col items-center justify-center p-24 text-slate-300">
-                                <i data-lucide="cloud-download" className="w-12 h-12 animate-bounce mb-4 opacity-20"></i>
-                                <p className="font-black text-[10px] uppercase tracking-widest">Carregando Planilha...</p>
+                        {/* Mensagens */}
+                        {message && (
+                            <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 border ${message.type === 'error' ? 'bg-red-50 text-red-700 border-red-100' : message.type === 'success' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                                <span className="font-bold">{message.text}</span>
                             </div>
-                        ) : (
-                            <div className="animate-in fade-in duration-500">
-                                {abaAtiva === 'chamada' && (
-                                    <div className="space-y-4">
-                                        {!turmaSelecionada ? (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                                {TURMAS.map(t => (
-                                                    <div key={t.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all">
-                                                        <h3 className="font-bold text-slate-800 mb-1">{t.name}</h3>
-                                                        <p className="text-[10px] text-slate-400 font-bold mb-6 uppercase tracking-widest">
-                                                            {alunosFiltrados.filter(a => a.classId === t.id).length} Alunos
-                                                        </p>
-                                                        <div className="flex gap-2">
-                                                            <button onClick={() => setTurmaSelecionada(t)} className="flex-1 bg-indigo-50 text-indigo-600 py-3 rounded-2xl font-bold text-xs hover:bg-indigo-600 hover:text-white transition-all">Abrir Chamada</button>
-                                                            <button onClick={() => {setTurmaSelecionada(t); setVerEstatisticas(true);}} className="bg-slate-50 p-3 rounded-2xl text-slate-300 hover:text-indigo-500 transition-colors">
-                                                                <i data-lucide="bar-chart-2"></i>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : verEstatisticas ? (
-                                            <div className="space-y-6 animate-in slide-in-from-bottom-4">
-                                                <button onClick={() => {setTurmaSelecionada(null); setVerEstatisticas(false);}} className="text-indigo-600 font-bold text-sm flex items-center gap-2">
-                                                    <i data-lucide="arrow-left"></i> Voltar
-                                                </button>
-                                                
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm md:col-span-2">
-                                                        <h2 className="text-xs font-black text-slate-400 mb-6 uppercase tracking-widest">Tendência</h2>
-                                                        <div className="h-64">
-                                                            <ResponsiveContainer width="100%" height="100%">
-                                                                <LineChart data={estatisticasTurma.timeline}>
-                                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                                                    <XAxis dataKey="dataLabel" fontSize={10} axisLine={false} tickLine={false} />
-                                                                    <YAxis fontSize={10} axisLine={false} tickLine={false} />
-                                                                    <Tooltip />
-                                                                    <Line type="monotone" dataKey="total" stroke="#6366f1" strokeWidth={5} dot={{ r: 6, fill: '#6366f1', strokeWidth: 3, stroke: '#fff' }} />
-                                                                </LineChart>
-                                                            </ResponsiveContainer>
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-indigo-600 p-8 rounded-[2rem] text-white flex flex-col items-center justify-center shadow-2xl">
-                                                        <p className="text-[10px] font-bold uppercase opacity-60 mb-2">Média</p>
-                                                        <p className="text-7xl font-black">{estatisticasTurma.media}</p>
-                                                        <p className="text-xs font-medium mt-4">Alunos</p>
-                                                    </div>
-                                                </div>
+                        )}
 
-                                                <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                                                    <div className="p-5 border-b font-black text-[10px] uppercase text-slate-400 bg-slate-50/50 flex justify-between">
-                                                        <span>Ranking Alunos</span>
-                                                        <span>{semestreAtual}</span>
-                                                    </div>
-                                                    <div className="divide-y divide-slate-50">
-                                                        {estatisticasTurma.ranking.sort((a,b) => b.percentual - a.percentual).map(aluno => (
-                                                            <div key={aluno.id} className="p-4 px-6 flex justify-between items-center group">
-                                                                <div>
-                                                                    <p className="font-bold text-slate-700">{aluno.name}</p>
-                                                                    {aluno.emAlerta && <span className="text-[10px] text-red-500 font-black animate-pulse uppercase">⚠️ 3 Faltas</span>}
-                                                                </div>
-                                                                <div className="text-right">
-                                                                    <p className="font-black text-xl text-indigo-600">{aluno.percentual}%</p>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-200">
-                                                <div className="bg-indigo-600 p-6 text-white flex justify-between items-center font-bold">
-                                                    <button onClick={() => setTurmaSelecionada(null)} className="bg-white/10 p-2 rounded-xl backdrop-blur-md active:scale-90 transition-all">
-                                                        <i data-lucide="chevron-left"></i>
-                                                    </button>
-                                                    <div className="text-center">
-                                                        <h2 className="text-sm">{turmaSelecionada.name}</h2>
-                                                        <p className="text-[10px] opacity-60 uppercase">{dataAtual.split('-').reverse().join('/')}</p>
-                                                    </div>
-                                                    <button onClick={carregarDados} className="bg-white/10 p-2 rounded-xl backdrop-blur-md active:scale-90 transition-all">
-                                                        <i data-lucide="refresh-cw" className={carregando ? 'animate-spin' : ''}></i>
-                                                    </button>
-                                                </div>
-                                                <div className="divide-y divide-slate-50 max-h-[60vh] overflow-y-auto custom-scroll">
-                                                    {alunosFiltrados.filter(a => a.classId === turmaSelecionada.id).map(aluno => {
-                                                        const presente = presencasFiltradas.some(p => p.studentId == aluno.id && p.date === dataAtual);
-                                                        const sinc = sincronizandoId === aluno.id;
-                                                        return (
-                                                            <div key={aluno.id} className="p-4 px-6 flex justify-between items-center hover:bg-slate-50 transition-colors">
-                                                                <span className="font-bold text-slate-700">{aluno.name}</span>
-                                                                <button 
-                                                                    disabled={sinc}
-                                                                    onClick={() => alternarPresenca(aluno.id, turmaSelecionada.id)} 
-                                                                    className={`px-10 py-4 rounded-2xl font-black text-[10px] uppercase transition-all shadow-md flex items-center gap-2 ${presente ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-400'}`}
-                                                                >
-                                                                    {sinc ? <i data-lucide="refresh-cw" className="w-3 h-3 animate-spin"></i> : presente ? 'Presente' : 'Faltou'}
-                                                                </button>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
+                        {/* Chamada */}
+                        {activeTab === 'chamada' && (
+                            <div className="fade-in space-y-6">
+                                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+                                    <div className="flex items-center gap-2 mb-6 text-indigo-900 border-b border-slate-100 pb-2">
+                                        <Icon name="settings" className="w-5 h-5" />
+                                        <h2 className="font-black text-lg uppercase">Configuração</h2>
                                     </div>
-                                )}
 
-                                {abaAtiva === 'relatorios' && (
-                                    <div className="space-y-6 animate-in fade-in duration-500">
-                                        <h2 className="text-2xl font-black text-slate-800 tracking-tighter">Resumo {semestreAtual}</h2>
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 text-center shadow-sm">
-                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Inscritos</p>
-                                                <p className="text-4xl font-black text-indigo-600">{alunosFiltrados.length}</p>
-                                            </div>
-                                            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 text-center shadow-sm">
-                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Presenças</p>
-                                                <p className="text-4xl font-black text-emerald-500">{presencasFiltradas.filter(p => p.date === dataAtual).length}</p>
-                                            </div>
-                                            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 text-center shadow-sm col-span-2 md:col-span-1">
-                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">% de Frequência</p>
-                                                <p className="text-4xl font-black text-amber-500">
-                                                    {alunosFiltrados.length > 0 ? Math.round((presencasFiltradas.filter(p => p.date === dataAtual).length / alunosFiltrados.length)*100) : 0}%
-                                                </p>
-                                            </div>
-                                            <div className="bg-slate-800 p-6 rounded-[2rem] text-white text-center">
-                                                <p className="text-3xl font-black">{semestreAtual}</p>
-                                            </div>
+                                    <div className="grid md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Data</label>
+                                            <input type="date" name="dataAula" value={formData.dataAula} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 mt-1 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Professor</label>
+                                            <input type="text" name="professor" placeholder="Nome" value={formData.professor} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 mt-1 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input type="number" name="ano" value={formData.ano} onChange={handleInputChange} className="bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-center font-bold" />
+                                            <select name="semestre" value={formData.semestre} onChange={handleInputChange} className="bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-center">
+                                                <option value="1">1º Sem</option>
+                                                <option value="2">2º Sem</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <select name="turma" value={formData.turma} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-medium focus:ring-2 focus:ring-indigo-500 outline-none">
+                                                <option value="">Selecione a Turma...</option>
+                                                <option value="infantil-1">Infantil 1</option>
+                                                <option value="infantil-2">Infantil 2</option>
+                                                <option value="adolescentes">Adolescentes</option>
+                                                <option value="adultos-1">Adultos 1</option>
+                                                <option value="adultos-2">Adultos 2</option>
+                                            </select>
                                         </div>
                                     </div>
+
+                                    <button onClick={carregarAlunos} disabled={loading} className="w-full mt-6 bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex justify-center items-center gap-2">
+                                        {loading ? "Carregando..." : <><Icon name="search" className="w-4 h-4" /> Buscar Alunos</>}
+                                    </button>
+                                </div>
+
+                                {alunos.length > 0 && (
+                                    <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 fade-in border-l-4 border-l-indigo-500">
+                                        <div className="flex justify-between items-center mb-6">
+                                            <h3 className="font-black text-lg text-slate-800">Lista de Presença</h3>
+                                            <span className="text-xs font-bold bg-slate-100 px-3 py-1 rounded-full">{alunos.length} Alunos</span>
+                                        </div>
+                                        <div className="space-y-3 mb-8">
+                                            {alunos.map((aluno, idx) => (
+                                                <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border ${aluno.presente ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                                                    <span className={`font-bold text-sm ${aluno.presente ? 'text-indigo-900' : 'text-slate-500'}`}>{aluno.nome}</span>
+                                                    <div className="relative inline-block w-12 h-6 align-middle select-none">
+                                                        <input type="checkbox" checked={aluno.presente} onChange={() => togglePresenca(idx)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 left-0 top-0 border-slate-300 shadow-sm" style={{right: aluno.presente ? '0' : 'auto', left: aluno.presente ? 'auto' : '0', borderColor: aluno.presente ? '#4f46e5' : '#e2e8f0'}} />
+                                                        <div className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-300 ${aluno.presente ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button onClick={salvarChamada} disabled={loading} className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl shadow hover:bg-emerald-700 transition-colors flex justify-center items-center gap-2">
+                                            <Icon name="save" className="w-5 h-5" /> Confirmar Chamada
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Dashboard */}
+                        {activeTab === 'dashboard' && (
+                            <div className="fade-in space-y-6">
+                                {loading && !dashboardData && <div className="text-center p-10 text-slate-400 font-bold">Carregando dados...</div>}
+                                {dashboardData && (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
+                                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Total Alunos</p>
+                                                <p className="text-3xl font-black text-indigo-600">{dashboardData.totalAtivos}</p>
+                                            </div>
+                                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
+                                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Presença Média</p>
+                                                <p className="text-3xl font-black text-emerald-500">
+                                                    {(() => {
+                                                        let p = 0, t = 0;
+                                                        Object.values(dashboardData.statsPorTurma).forEach(s => { p += s.presentes; t += s.total; });
+                                                        return t > 0 ? (p / t * 100).toFixed(0) + '%' : '0%';
+                                                    })()}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                            <h3 className="font-bold text-slate-700 mb-4">Frequência por Turma</h3>
+                                            <div className="relative h-64 w-full">
+                                                <canvas ref={chartRef}></canvas>
+                                            </div>
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         )}
                     </main>
 
-                    <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-slate-100 p-4 md:hidden flex justify-around shadow-2xl z-50">
-                        <button onClick={() => {setAbaAtiva('chamada'); setTurmaSelecionada(null);}} className={`flex flex-col items-center gap-1 ${abaAtiva === 'chamada' ? 'text-indigo-600' : 'text-slate-300'}`}>
-                            <i data-lucide="clipboard-list" className="w-7 h-7"></i>
-                            <span className="text-[10px] font-black uppercase">Chamada</span>
-                        </button>
-                        <button onClick={() => {setAbaAtiva('relatorios'); setTurmaSelecionada(null);}} className={`flex flex-col items-center gap-1 ${abaAtiva === 'relatorios' ? 'text-indigo-600' : 'text-slate-300'}`}>
-                            <i data-lucide="layout-dashboard" className="w-7 h-7"></i>
-                            <span className="text-[10px] font-black uppercase">Painel</span>
-                        </button>
-                        <button onClick={carregarDados} className={`flex flex-col items-center gap-1 text-slate-300`}>
-                            <i data-lucide="refresh-cw" className={`w-7 h-7 ${carregando ? 'animate-spin text-indigo-600' : ''}`}></i>
-                            <span className="text-[10px] font-black uppercase">Sinc</span>
-                        </button>
-                    </nav>
+                    <footer className="py-8 text-center text-slate-400 mt-auto bg-white border-t border-slate-50">
+                        <p className="text-xs font-bold uppercase tracking-widest text-slate-300">© 2026 PIPP</p>
+                    </footer>
                 </div>
             );
-        }
+        };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
