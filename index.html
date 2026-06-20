@@ -5,14 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EBD - PIPP Acesso Restrito</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Rastreador de carregamento: marca cada biblioteca que NAO carregou -->
+    <script>
+        window.__falhasDeCarregamento = [];
+        window.__erroDeExecucao = null;
+        window.onerror = function (msg, src, lin, col, err) {
+            window.__erroDeExecucao = (err && err.stack) ? err.stack : (msg + ' (' + src + ':' + lin + ')');
+        };
+    </script>
 
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Bibliotecas externas (versoes fixadas = mais estavel que @latest) -->
+    <script src="https://cdn.tailwindcss.com"
+            onerror="window.__falhasDeCarregamento.push('Tailwind (estilos) — cdn.tailwindcss.com')"></script>
 
-    <script src="https://unpkg.com/lucide@0.263.1/dist/umd/lucide.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
+            onerror="window.__falhasDeCarregamento.push('React — unpkg.com')"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
+            onerror="window.__falhasDeCarregamento.push('React DOM — unpkg.com')"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"
+            onerror="window.__falhasDeCarregamento.push('Babel (traduz o codigo) — unpkg.com')"></script>
+
+    <script src="https://unpkg.com/lucide@0.263.1/dist/umd/lucide.min.js"
+            onerror="window.__falhasDeCarregamento.push('Lucide (icones) — unpkg.com')"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+            onerror="window.__falhasDeCarregamento.push('Chart.js (graficos) — cdn.jsdelivr.net')"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
@@ -462,6 +478,51 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+    </script>
+
+    <!-- DETECTOR DE TELA BRANCA: roda em JS puro (nao depende do Babel/React) -->
+    <script>
+        function mostrarDiagnostico() {
+            var root = document.getElementById('root');
+            if (root && root.children.length > 0) return; // app montou: nada a fazer
+
+            var faltando = [];
+            if (typeof React === 'undefined') faltando.push('React');
+            if (typeof ReactDOM === 'undefined') faltando.push('React DOM');
+            if (typeof Babel === 'undefined') faltando.push('Babel');
+
+            var msg = '';
+            if (window.__falhasDeCarregamento && window.__falhasDeCarregamento.length) {
+                msg += '<p><strong>Estas bibliotecas nao carregaram:</strong></p><ul style="margin:8px 0 0 18px">';
+                window.__falhasDeCarregamento.forEach(function (f) { msg += '<li>' + f + '</li>'; });
+                msg += '</ul>';
+            } else if (faltando.length) {
+                msg += '<p><strong>Bibliotecas indisponiveis:</strong> ' + faltando.join(', ') + '</p>';
+            }
+            if (window.__erroDeExecucao) {
+                msg += '<p style="margin-top:12px"><strong>Erro de execucao:</strong></p>'
+                     + '<pre style="white-space:pre-wrap;background:#0f172a;color:#fca5a5;padding:12px;border-radius:8px;font-size:12px;overflow:auto">'
+                     + String(window.__erroDeExecucao).replace(/</g, '&lt;') + '</pre>';
+            }
+            if (!msg) {
+                msg = '<p>Os scripts demoraram demais para responder ou foram bloqueados.</p>';
+            }
+
+            root.innerHTML =
+                '<div style="max-width:640px;margin:48px auto;padding:28px;font-family:system-ui,sans-serif;'
+              + 'background:#fff;border:1px solid #e2e8f0;border-left:6px solid #dc2626;border-radius:16px;'
+              + 'box-shadow:0 10px 30px rgba(0,0,0,.06);color:#1e293b">'
+              + '<h2 style="margin:0 0 6px;color:#dc2626;font-size:18px">Nao foi possivel carregar a pagina</h2>'
+              + '<p style="margin:0 0 14px;color:#64748b;font-size:14px">O codigo esta correto, mas os recursos abaixo nao puderam ser baixados:</p>'
+              + msg
+              + '<p style="margin-top:18px;font-size:13px;color:#475569"><strong>Como resolver:</strong></p>'
+              + '<ul style="margin:6px 0 0 18px;font-size:13px;color:#475569;line-height:1.6">'
+              + '<li>Verifique sua conexao com a internet e recarregue (F5).</li>'
+              + '<li>Desative bloqueadores de anuncios/scripts para esta pagina.</li>'
+              + '<li>Em rede corporativa/escolar, o acesso a <code>unpkg.com</code> ou <code>jsdelivr.net</code> pode estar bloqueado — tente outra rede.</li>'
+              + '</ul></div>';
+        }
+        window.addEventListener('load', function () { setTimeout(mostrarDiagnostico, 2500); });
     </script>
 </body>
 </html>
