@@ -51,7 +51,37 @@
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqe2CmqgBBNaL90jnyUBndfsGYSejfqL_C4v60UyeIoQktKGjIG6XFVQPCya4NKrn-nw/exec";
         // ==========================================================
 
+        const TURMAS = [
+            'infantil-1-3',
+            'infantil-4-6',
+            'infantil-7-11',
+            'infantil-aras',
+            'adolescentes',
+            'adultos-catecumenos',
+            'adultos-discipulado'
+        ];
+
         const { useState, useEffect, useRef, useMemo } = React;
+
+        // Formata "yyyy-MM-dd" para "dd/mm" (rótulo curto pra eixo de gráfico)
+        const formatarDataCurta = (dataKey) => {
+            if (!dataKey) return '';
+            const partes = dataKey.split('-');
+            return partes.length === 3 ? `${partes[2]}/${partes[1]}` : dataKey;
+        };
+
+        // Banner de aviso quando o backend (Apps Script) ainda não manda um campo novo
+        const AvisoBackend = ({ texto }) => (
+            <div className="bg-amber-50 text-amber-700 border border-amber-100 rounded-2xl p-4 flex items-center gap-3 text-sm font-medium">
+                <Icon name="alert-triangle" className="w-5 h-5 flex-shrink-0" />
+                <span>{texto}</span>
+            </div>
+        );
+
+        // Aviso neutro (sem dado ainda, mas a estrutura já existe)
+        const AvisoVazio = ({ texto }) => (
+            <div className="text-center text-slate-400 text-sm font-medium py-8">{texto}</div>
+        );
 
         // ==========================================================
         // COMPONENTE DE ÍCONE BLINDADO
@@ -175,9 +205,21 @@
 
             const [alunos, setAlunos] = useState([]);
             const [dashboardData, setDashboardData] = useState(null);
+            const [turmaFiltro, setTurmaFiltro] = useState(TURMAS[0]);
+            const [dataInicio, setDataInicio] = useState('');
+            const [dataFim, setDataFim] = useState('');
 
-            const chartRef = useRef(null);
-            const chartInstance = useRef(null);
+            const [turmaGerenciar, setTurmaGerenciar] = useState('');
+            const [gerenciamento, setGerenciamento] = useState(null);
+            const [novoAlunoNome, setNovoAlunoNome] = useState('');
+            const [loadingGerenciamento, setLoadingGerenciamento] = useState(false);
+
+            const chartGeralRef = useRef(null);
+            const chartGeralInstance = useRef(null);
+            const chartRankingRef = useRef(null);
+            const chartRankingInstance = useRef(null);
+            const chartTurmaRef = useRef(null);
+            const chartTurmaInstance = useRef(null);
 
             // FUNÇÕES DE LÓGICA
             const handleInputChange = (e) => {
@@ -280,6 +322,167 @@
                 }
             };
 
+            const carregarGerenciamento = async (turma) => {
+                if (!turma) return;
+                setLoadingGerenciamento(true);
+                setMessage(null);
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "get_gerenciamento_turma", turma })
+                    });
+                    const data = await res.json();
+                    if (data.result === 'success') {
+                        setGerenciamento(data);
+                    } else {
+                        setMessage({ type: 'error', text: data.error || 'Erro ao carregar turma.' });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
+                } finally {
+                    setLoadingGerenciamento(false);
+                }
+            };
+
+            const matricularAluno = async () => {
+                const nome = novoAlunoNome.trim();
+                if (!turmaGerenciar || !nome) {
+                    setMessage({ type: 'error', text: 'Digite o nome do aluno.' });
+                    return;
+                }
+                setLoadingGerenciamento(true);
+                setMessage(null);
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "matricular_aluno", turma: turmaGerenciar, nomeAluno: nome })
+                    });
+                    const data = await res.json();
+                    if (data.result === 'success') {
+                        setMessage({ type: 'success', text: data.acao === 'reativado' ? 'Aluno reativado nesta turma!' : 'Aluno matriculado!' });
+                        setNovoAlunoNome('');
+                        await carregarGerenciamento(turmaGerenciar);
+                    } else {
+                        setMessage({ type: 'error', text: data.error || 'Erro ao matricular aluno.' });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
+                } finally {
+                    setLoadingGerenciamento(false);
+                }
+            };
+
+            const desmatricularAluno = async (nome) => {
+                if (!window.confirm(`Remover "${nome}" desta turma? O histórico de chamadas dele é mantido.`)) return;
+                setLoadingGerenciamento(true);
+                setMessage(null);
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "desmatricular_aluno", turma: turmaGerenciar, nomeAluno: nome })
+                    });
+                    const data = await res.json();
+                    if (data.result === 'success') {
+                        setMessage({ type: 'success', text: 'Aluno removido da turma.' });
+                        await carregarGerenciamento(turmaGerenciar);
+                    } else {
+                        setMessage({ type: 'error', text: data.error || 'Erro ao remover aluno.' });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
+                } finally {
+                    setLoadingGerenciamento(false);
+                }
+            };
+
+            // --- VALORES DERIVADOS (memorizados) ---
+
+            // true se a data (yyyy-MM-dd) está dentro do intervalo escolhido pelo professor
+            const dentroIntervalo = (dataKey) => {
+                if (dataInicio && dataKey < dataInicio) return false;
+                if (dataFim && dataKey > dataFim) return false;
+                return true;
+            };
+
+            const historicoGeralFiltrado = useMemo(() => {
+                if (!dashboardData || !dashboardData.historicoGeral) return dashboardData ? dashboardData.historicoGeral : undefined;
+                return dashboardData.historicoGeral.filter(h => dentroIntervalo(h.data));
+            }, [dashboardData, dataInicio, dataFim]);
+
+            const historicoTurmaFiltrado = useMemo(() => {
+                const historico = dashboardData && dashboardData.historicoPorTurma && dashboardData.historicoPorTurma[turmaFiltro];
+                if (!historico) return historico;
+                return historico.filter(h => dentroIntervalo(h.data));
+            }, [dashboardData, turmaFiltro, dataInicio, dataFim]);
+
+            const totaisGerais = useMemo(() => {
+                if (dashboardData && dashboardData.historicoGeral) {
+                    let presentes = 0, ausentes = 0, total = 0;
+                    (historicoGeralFiltrado || []).forEach(h => { presentes += h.presentes; ausentes += h.ausentes; total += h.total; });
+                    return { presentes, ausentes, total };
+                }
+                // Backend antigo sem historicoGeral: usa os totais agregados (sem filtro de data)
+                if (!dashboardData || !dashboardData.statsPorTurma) return { presentes: 0, ausentes: 0, total: 0 };
+                let presentes = 0, ausentes = 0, total = 0;
+                Object.values(dashboardData.statsPorTurma).forEach(s => {
+                    presentes += s.presentes; ausentes += s.ausentes; total += s.total;
+                });
+                return { presentes, ausentes, total };
+            }, [dashboardData, historicoGeralFiltrado]);
+
+            const rankingTurmas = useMemo(() => {
+                if (!dashboardData || !dashboardData.statsPorTurma) return [];
+                return Object.keys(dashboardData.statsPorTurma).map(turma => {
+                    const s = dashboardData.statsPorTurma[turma];
+                    const historicoTurma = dashboardData.historicoPorTurma && dashboardData.historicoPorTurma[turma];
+
+                    if (historicoTurma) {
+                        const filtrado = historicoTurma.filter(h => dentroIntervalo(h.data));
+                        let presentes = 0, ausentes = 0, total = 0;
+                        filtrado.forEach(h => { presentes += h.presentes; ausentes += h.ausentes; total += h.total; });
+                        return {
+                            turma,
+                            alunos: s.alunos,
+                            total,
+                            domingosRegistrados: filtrado.length,
+                            percentual: total > 0 ? (presentes / total * 100) : 0
+                        };
+                    }
+
+                    // Backend antigo sem historicoPorTurma: usa os totais agregados (sem filtro de data)
+                    return {
+                        turma,
+                        alunos: s.alunos,
+                        total: s.total,
+                        domingosRegistrados: 0,
+                        percentual: s.total > 0 ? (s.presentes / s.total * 100) : 0
+                    };
+                }).sort((a, b) => b.percentual - a.percentual);
+            }, [dashboardData, dataInicio, dataFim]);
+
+            const mapaFaltasPivot = useMemo(() => {
+                if (!dashboardData || !dashboardData.mapaAlunosPorTurma) return null;
+                const registros = dashboardData.mapaAlunosPorTurma[turmaFiltro];
+                if (!registros) return { alunosList: [], datasList: [], statusMap: {} };
+
+                const alunosSet = new Set();
+                const datasSet = new Set();
+                const statusMap = {};
+                registros.filter(r => dentroIntervalo(r.data)).forEach(r => {
+                    alunosSet.add(r.aluno);
+                    datasSet.add(r.data);
+                    statusMap[`${r.aluno}|${r.data}`] = r.status;
+                });
+                return {
+                    alunosList: Array.from(alunosSet).sort(),
+                    datasList: Array.from(datasSet).sort(),
+                    statusMap
+                };
+            }, [dashboardData, turmaFiltro, dataInicio, dataFim]);
+
             // --- HOOKS (EFEITOS) NO TOPO ---
             // IMPORTANTE: Eles devem ser declarados ANTES de qualquer "return"
 
@@ -291,34 +494,108 @@
             }, [activeTab, isLoggedIn]);
 
             useEffect(() => {
-                if (isLoggedIn && activeTab === 'dashboard' && dashboardData && chartRef.current) {
-                    if (chartInstance.current) chartInstance.current.destroy();
+                if (isLoggedIn && activeTab === 'turma' && turmaGerenciar) {
+                    carregarGerenciamento(turmaGerenciar);
+                }
+            }, [activeTab, turmaGerenciar, isLoggedIn]);
 
-                    const labels = Object.keys(dashboardData.statsPorTurma);
-                    const dataPoints = labels.map(t => {
-                        const s = dashboardData.statsPorTurma[t];
-                        return s.total > 0 ? (s.presentes / s.total * 100).toFixed(1) : 0;
-                    });
+            // Gráfico: Evolução Geral por Domingo (linha % + barras de total)
+            useEffect(() => {
+                const historico = historicoGeralFiltrado;
+                if (isLoggedIn && activeTab === 'dashboard' && historico && historico.length > 0 && chartGeralRef.current) {
+                    if (chartGeralInstance.current) chartGeralInstance.current.destroy();
 
-                    chartInstance.current = new Chart(chartRef.current, {
-                        type: 'bar',
+                    const labels = historico.map(h => formatarDataCurta(h.data));
+                    const percentuais = historico.map(h => h.total > 0 ? +(h.presentes / h.total * 100).toFixed(1) : 0);
+                    const totais = historico.map(h => h.total);
+
+                    chartGeralInstance.current = new Chart(chartGeralRef.current, {
                         data: {
-                            labels: labels,
-                            datasets: [{
-                                label: '% Presença',
-                                data: dataPoints,
-                                backgroundColor: '#4f46e5',
-                                borderRadius: 5,
-                            }]
+                            labels,
+                            datasets: [
+                                { type: 'bar', label: 'Total de Chamadas', data: totais, backgroundColor: '#c7d2fe', borderRadius: 4, yAxisID: 'yTotal', order: 2 },
+                                { type: 'line', label: '% Presença', data: percentuais, borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.3, yAxisID: 'yPct', order: 1 }
+                            ]
                         },
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
-                            scales: { y: { beginAtZero: true, max: 100 } }
+                            interaction: { mode: 'index', intersect: false },
+                            scales: {
+                                yPct: { type: 'linear', position: 'left', min: 0, max: 100, ticks: { callback: v => v + '%' } },
+                                yTotal: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } }
+                            }
                         }
                     });
                 }
-            }, [dashboardData, activeTab, isLoggedIn]);
+            }, [historicoGeralFiltrado, activeTab, isLoggedIn]);
+
+            // Gráfico: Ranking de Turmas (barras horizontais por % de presença)
+            useEffect(() => {
+                if (isLoggedIn && activeTab === 'dashboard' && rankingTurmas.length > 0 && chartRankingRef.current) {
+                    if (chartRankingInstance.current) chartRankingInstance.current.destroy();
+
+                    chartRankingInstance.current = new Chart(chartRankingRef.current, {
+                        type: 'bar',
+                        data: {
+                            labels: rankingTurmas.map(r => r.turma),
+                            datasets: [{
+                                label: '% Presença',
+                                data: rankingTurmas.map(r => +r.percentual.toFixed(1)),
+                                backgroundColor: '#4f46e5',
+                                borderRadius: 5
+                            }]
+                        },
+                        options: {
+                            indexAxis: 'y',
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: { x: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } },
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        afterLabel: (ctx) => `${rankingTurmas[ctx.dataIndex].alunos} alunos ativos`
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }, [rankingTurmas, activeTab, isLoggedIn]);
+
+            // Gráfico: Evolução por Turma (filtrado por turma e por intervalo de datas)
+            useEffect(() => {
+                const historico = historicoTurmaFiltrado;
+                if (isLoggedIn && activeTab === 'dashboard' && historico && historico.length > 0 && chartTurmaRef.current) {
+                    if (chartTurmaInstance.current) chartTurmaInstance.current.destroy();
+
+                    const labels = historico.map(h => formatarDataCurta(h.data));
+                    const percentuais = historico.map(h => h.total > 0 ? +(h.presentes / h.total * 100).toFixed(1) : 0);
+                    const totais = historico.map(h => h.total);
+
+                    chartTurmaInstance.current = new Chart(chartTurmaRef.current, {
+                        data: {
+                            labels,
+                            datasets: [
+                                { type: 'bar', label: 'Total de Chamadas', data: totais, backgroundColor: '#a7f3d0', borderRadius: 4, yAxisID: 'yTotal', order: 2 },
+                                { type: 'line', label: '% Presença', data: percentuais, borderColor: '#059669', backgroundColor: '#059669', tension: 0.3, yAxisID: 'yPct', order: 1 }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: { mode: 'index', intersect: false },
+                            scales: {
+                                yPct: { type: 'linear', position: 'left', min: 0, max: 100, ticks: { callback: v => v + '%' } },
+                                yTotal: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } }
+                            }
+                        }
+                    });
+                } else if (chartTurmaInstance.current) {
+                    chartTurmaInstance.current.destroy();
+                    chartTurmaInstance.current = null;
+                }
+            }, [historicoTurmaFiltrado, activeTab, isLoggedIn]);
 
 
             // --- RENDERIZAÇÃO CONDICIONAL ---
@@ -347,7 +624,7 @@
                         </div>
                     </header>
 
-                    <main className="max-w-3xl mx-auto px-4 -mt-6 w-full flex-grow relative z-20 pb-12">
+                    <main className={`mx-auto px-4 -mt-6 w-full flex-grow relative z-20 pb-12 transition-all ${activeTab === 'dashboard' ? 'max-w-6xl' : 'max-w-3xl'}`}>
 
                         {/* Abas */}
                         <div className="flex bg-white p-1 rounded-2xl shadow-lg mb-6 border border-slate-100">
@@ -356,6 +633,9 @@
                             </button>
                             <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
                                 <Icon name="bar-chart-2" className="w-5 h-5" /> Estatísticas
+                            </button>
+                            <button onClick={() => setActiveTab('turma')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'turma' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                <Icon name="users" className="w-5 h-5" /> Turma
                             </button>
                         </div>
 
@@ -394,13 +674,7 @@
                                         <div>
                                             <select name="turma" value={formData.turma} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-medium focus:ring-2 focus:ring-indigo-500 outline-none">
                                                 <option value="">Selecione a Turma...</option>
-                                                <option value="infantil-1-3">infantil-1-3</option>
-                                                <option value="infantil-4-6">infantil-4-6</option>
-                                                <option value="infantil-7-11">infantil-7-11</option>
-                                                <option value="infantil-aras">infantil-aras</option>
-                                                <option value="adolescentes">adolescentes</option>
-                                                <option value="adultos-catecumenos">adultos-catecumenos</option>
-                                                <option value="adultos-discipulado">adultos-discipulado</option>
+                                                {TURMAS.map(t => <option key={t} value={t}>{t}</option>)}
                                             </select>
                                         </div>
                                     </div>
@@ -441,7 +715,25 @@
                                 {loading && !dashboardData && <div className="text-center p-10 text-slate-400 font-bold">Carregando dados...</div>}
                                 {dashboardData && (
                                     <>
-                                        <div className="grid grid-cols-2 gap-4">
+                                        {/* Filtro de período: aplica-se a todos os cards e gráficos abaixo */}
+                                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-end gap-3">
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1 ml-1">De</label>
+                                                <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1 ml-1">Até</label>
+                                                <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                            </div>
+                                            <div className="flex gap-2 ml-auto">
+                                                <button onClick={() => { const ano = new Date().getFullYear(); setDataInicio(`${ano}-01-01`); setDataFim(`${ano}-06-30`); }} className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">1º Semestre</button>
+                                                <button onClick={() => { const ano = new Date().getFullYear(); setDataInicio(`${ano}-07-01`); setDataFim(`${ano}-12-31`); }} className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">2º Semestre</button>
+                                                <button onClick={() => { setDataInicio(''); setDataFim(''); }} className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">Tudo</button>
+                                            </div>
+                                        </div>
+
+                                        {/* Visão executiva */}
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
                                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Total Alunos</p>
                                                 <p className="text-3xl font-black text-indigo-600">{dashboardData.totalAtivos}</p>
@@ -449,19 +741,204 @@
                                             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
                                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Presença Média</p>
                                                 <p className="text-3xl font-black text-emerald-500">
-                                                    {(() => {
-                                                        let p = 0, t = 0;
-                                                        Object.values(dashboardData.statsPorTurma).forEach(s => { p += s.presentes; t += s.total; });
-                                                        return t > 0 ? (p / t * 100).toFixed(0) + '%' : '0%';
-                                                    })()}
+                                                    {totaisGerais.total > 0 ? (totaisGerais.presentes / totaisGerais.total * 100).toFixed(0) + '%' : '0%'}
                                                 </p>
                                             </div>
-                                        </div>
-                                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                            <h3 className="font-bold text-slate-700 mb-4">Frequência por Turma</h3>
-                                            <div className="relative h-64 w-full">
-                                                <canvas ref={chartRef}></canvas>
+                                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
+                                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Presentes</p>
+                                                <p className="text-3xl font-black text-slate-700">{totaisGerais.presentes}</p>
                                             </div>
+                                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
+                                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Ausentes</p>
+                                                <p className="text-3xl font-black text-red-500">{totaisGerais.ausentes}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Evolução Geral por Domingo */}
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                            <h3 className="font-bold text-slate-700 mb-4">Evolução Geral por Domingo</h3>
+                                            {dashboardData.historicoGeral === undefined ? (
+                                                <AvisoBackend texto="O backend ainda não está enviando histórico geral por data." />
+                                            ) : historicoGeralFiltrado.length === 0 ? (
+                                                <AvisoVazio texto="Nenhum registro de chamada neste período." />
+                                            ) : (
+                                                <div className="relative h-72 w-full">
+                                                    <canvas ref={chartGeralRef}></canvas>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Visão comparativa: Ranking de Turmas */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                                <h3 className="font-bold text-slate-700 mb-4">Ranking de Turmas</h3>
+                                                {rankingTurmas.length === 0 ? (
+                                                    <AvisoVazio texto="Nenhuma turma com registros ainda." />
+                                                ) : (
+                                                    <div className="relative h-72 w-full">
+                                                        <canvas ref={chartRankingRef}></canvas>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                                <h3 className="font-bold text-slate-700 mb-4">Resumo por Turma</h3>
+                                                {rankingTurmas.length === 0 ? (
+                                                    <AvisoVazio texto="Nenhuma turma com registros ainda." />
+                                                ) : (
+                                                    <div className="space-y-2">
+                                                        {rankingTurmas.map(r => (
+                                                            <div key={r.turma} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                                                <div>
+                                                                    <p className="font-bold text-sm text-slate-800">{r.turma}</p>
+                                                                    <p className="text-xs text-slate-400">{r.alunos} alunos · {r.domingosRegistrados} domingo{r.domingosRegistrados === 1 ? '' : 's'} registrado{r.domingosRegistrados === 1 ? '' : 's'}</p>
+                                                                </div>
+                                                                <span className="font-black text-indigo-600">{r.percentual.toFixed(0)}%</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Visão analítica: por turma, com filtro compartilhado */}
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                                                <h3 className="font-bold text-slate-700">Acompanhamento por Turma</h3>
+                                                <select value={turmaFiltro} onChange={(e) => setTurmaFiltro(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-4 font-bold text-sm">
+                                                    {TURMAS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                </select>
+                                            </div>
+
+                                            <div className="space-y-8">
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Evolução por Turma</p>
+                                                    {dashboardData.historicoPorTurma === undefined ? (
+                                                        <AvisoBackend texto="O backend ainda não está enviando evolução por turma." />
+                                                    ) : !historicoTurmaFiltrado || historicoTurmaFiltrado.length === 0 ? (
+                                                        <AvisoVazio texto="Nenhum registro de chamada nesta turma no período." />
+                                                    ) : (
+                                                        <div className="relative h-64 w-full">
+                                                            <canvas ref={chartTurmaRef}></canvas>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Mapa de Faltas por Aluno</p>
+                                                    {dashboardData.mapaAlunosPorTurma === undefined ? (
+                                                        <AvisoBackend texto="O backend ainda não está enviando o mapa de faltas por aluno." />
+                                                    ) : !mapaFaltasPivot || mapaFaltasPivot.alunosList.length === 0 ? (
+                                                        <AvisoVazio texto="Nenhum registro de chamada nesta turma no período." />
+                                                    ) : (
+                                                        <>
+                                                            <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                                                                <table className="border-collapse text-xs w-full">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th className="sticky left-0 bg-white text-left p-2 font-bold text-slate-600 border-b border-slate-100">Aluno</th>
+                                                                            {mapaFaltasPivot.datasList.map(d => (
+                                                                                <th key={d} className="p-2 font-bold text-slate-400 border-b border-slate-100 whitespace-nowrap">{formatarDataCurta(d)}</th>
+                                                                            ))}
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {mapaFaltasPivot.alunosList.map(aluno => (
+                                                                            <tr key={aluno} className="hover:bg-slate-50">
+                                                                                <td className="sticky left-0 bg-white p-2 font-medium text-slate-700 border-b border-slate-50 whitespace-nowrap">{aluno}</td>
+                                                                                {mapaFaltasPivot.datasList.map(d => {
+                                                                                    const status = mapaFaltasPivot.statusMap[`${aluno}|${d}`];
+                                                                                    return (
+                                                                                        <td key={d} className="p-2 text-center border-b border-slate-50">
+                                                                                            {status === 'Presente' && <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span>}
+                                                                                            {status === 'Ausente' && <span className="inline-block w-2.5 h-2.5 bg-red-500"></span>}
+                                                                                        </td>
+                                                                                    );
+                                                                                })}
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                            <div className="flex items-center gap-4 mt-3 text-xs text-slate-400 font-medium">
+                                                                <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Presente</span>
+                                                                <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 bg-red-500"></span> Ausente</span>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Turma: matricular / desmatricular alunos */}
+                        {activeTab === 'turma' && (
+                            <div className="fade-in space-y-6">
+                                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+                                    <div className="flex items-center gap-2 mb-6 text-indigo-900 border-b border-slate-100 pb-2">
+                                        <Icon name="users" className="w-5 h-5" />
+                                        <h2 className="font-black text-lg uppercase">Gerenciar Turma</h2>
+                                    </div>
+                                    <select value={turmaGerenciar} onChange={(e) => { setTurmaGerenciar(e.target.value); setGerenciamento(null); }} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-medium focus:ring-2 focus:ring-indigo-500 outline-none">
+                                        <option value="">Selecione a Turma...</option>
+                                        {TURMAS.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                </div>
+
+                                {loadingGerenciamento && !gerenciamento && <div className="text-center p-10 text-slate-400 font-bold">Carregando...</div>}
+
+                                {turmaGerenciar && gerenciamento && (
+                                    <>
+                                        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 border-l-4 border-l-indigo-500">
+                                            <h3 className="font-black text-lg text-slate-800 mb-4">Adicionar Aluno</h3>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={novoAlunoNome}
+                                                    onChange={(e) => setNovoAlunoNome(e.target.value)}
+                                                    placeholder="Nome completo do aluno"
+                                                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                />
+                                                <button onClick={matricularAluno} disabled={loadingGerenciamento || !novoAlunoNome.trim()} className="bg-indigo-600 text-white font-bold px-5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50">
+                                                    <Icon name="user-plus" className="w-4 h-4" /> Matricular
+                                                </button>
+                                            </div>
+                                            {(() => {
+                                                const nomeDigitado = novoAlunoNome.trim().toUpperCase();
+                                                if (!nomeDigitado) return null;
+                                                const reativavel = gerenciamento.inativos.find(n => n.toUpperCase() === nomeDigitado);
+                                                const outraTurma = gerenciamento.outrasTurmas.find(o => o.nome.toUpperCase() === nomeDigitado);
+                                                if (reativavel) {
+                                                    return <p className="text-xs font-bold text-amber-600 mt-2">Já cadastrado antes nesta turma — será reativado.</p>;
+                                                }
+                                                if (outraTurma) {
+                                                    return <p className="text-xs font-bold text-amber-600 mt-2">Este nome já está matriculado na turma "{outraTurma.turma}".</p>;
+                                                }
+                                                return null;
+                                            })()}
+                                        </div>
+
+                                        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+                                            <div className="flex justify-between items-center mb-6">
+                                                <h3 className="font-black text-lg text-slate-800">Alunos Matriculados</h3>
+                                                <span className="text-xs font-bold bg-slate-100 px-3 py-1 rounded-full">{gerenciamento.ativos.length} Alunos</span>
+                                            </div>
+                                            {gerenciamento.ativos.length === 0 ? (
+                                                <AvisoVazio texto="Nenhum aluno matriculado nesta turma ainda." />
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    {gerenciamento.ativos.map((nome) => (
+                                                        <div key={nome} className="flex items-center justify-between p-4 rounded-2xl border bg-slate-50 border-slate-100">
+                                                            <span className="font-bold text-sm text-slate-800">{nome}</span>
+                                                            <button onClick={() => desmatricularAluno(nome)} disabled={loadingGerenciamento} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
+                                                                <Icon name="x" className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     </>
                                 )}
