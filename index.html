@@ -16,19 +16,19 @@
 
     <!-- Bibliotecas externas (versoes fixadas = mais estavel que @latest) -->
     <script src="https://cdn.tailwindcss.com"
-            onerror="window.__falhasDeCarregamento.push('Tailwind (estilos) — cdn.tailwindcss.com')"></script>
+            onerror="window.__falhasDeCarregamento.push('Tailwind (estilos) - cdn.tailwindcss.com')"></script>
 
     <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
-            onerror="window.__falhasDeCarregamento.push('React — unpkg.com')"></script>
+            onerror="window.__falhasDeCarregamento.push('React - unpkg.com')"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
-            onerror="window.__falhasDeCarregamento.push('React DOM — unpkg.com')"></script>
+            onerror="window.__falhasDeCarregamento.push('React DOM - unpkg.com')"></script>
     <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"
-            onerror="window.__falhasDeCarregamento.push('Babel (traduz o codigo) — unpkg.com')"></script>
+            onerror="window.__falhasDeCarregamento.push('Babel (traduz o codigo) - unpkg.com')"></script>
 
     <script src="https://unpkg.com/lucide@0.263.1/dist/umd/lucide.min.js"
-            onerror="window.__falhasDeCarregamento.push('Lucide (icones) — unpkg.com')"></script>
+            onerror="window.__falhasDeCarregamento.push('Lucide (icones) - unpkg.com')"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
-            onerror="window.__falhasDeCarregamento.push('Chart.js (graficos) — cdn.jsdelivr.net')"></script>
+            onerror="window.__falhasDeCarregamento.push('Chart.js (graficos) - cdn.jsdelivr.net')"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
@@ -204,15 +204,17 @@
             });
 
             const [alunos, setAlunos] = useState([]);
+            const [turmaCarregada, setTurmaCarregada] = useState(false);
+            const [visitantes, setVisitantes] = useState([]);
+            const [novoVisitanteNome, setNovoVisitanteNome] = useState('');
+            const [professores, setProfessores] = useState([]);
+            const [alunosAtivosDisponiveis, setAlunosAtivosDisponiveis] = useState([]);
+            const [novoAlunoChamada, setNovoAlunoChamada] = useState('');
             const [dashboardData, setDashboardData] = useState(null);
             const [turmaFiltro, setTurmaFiltro] = useState(TURMAS[0]);
+            const [ordenarAlunosAZ, setOrdenarAlunosAZ] = useState(false);
             const [dataInicio, setDataInicio] = useState('');
             const [dataFim, setDataFim] = useState('');
-
-            const [turmaGerenciar, setTurmaGerenciar] = useState('');
-            const [gerenciamento, setGerenciamento] = useState(null);
-            const [novoAlunoNome, setNovoAlunoNome] = useState('');
-            const [loadingGerenciamento, setLoadingGerenciamento] = useState(false);
 
             const chartGeralRef = useRef(null);
             const chartGeralInstance = useRef(null);
@@ -220,12 +222,21 @@
             const chartRankingInstance = useRef(null);
             const chartTurmaRef = useRef(null);
             const chartTurmaInstance = useRef(null);
+            const chartVisitantesRef = useRef(null);
+            const chartVisitantesInstance = useRef(null);
+            const chartProfessoresRef = useRef(null);
+            const chartProfessoresInstance = useRef(null);
 
             // FUNÇÕES DE LÓGICA
             const handleInputChange = (e) => {
                 const { name, value } = e.target;
                 setFormData(prev => ({ ...prev, [name]: value }));
-                if (name === 'turma') setAlunos([]);
+                if (name === 'turma') {
+                    setAlunos([]);
+                    setVisitantes([]);
+                    setTurmaCarregada(false);
+                    setNovoAlunoChamada('');
+                }
             };
 
             const carregarAlunos = async () => {
@@ -237,14 +248,23 @@
                 setLoading(true);
                 setMessage(null);
                 setAlunos([]);
+                setVisitantes([]);
+                setTurmaCarregada(false);
 
                 try {
-                    const res = await fetch(SCRIPT_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: "buscar_alunos", turma: formData.turma })
-                    });
+                    const [resAlunos, resVisitantes] = await Promise.all([
+                        fetch(SCRIPT_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: "buscar_alunos", turma: formData.turma })
+                        }),
+                        fetch(SCRIPT_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: "buscar_visitantes", turma: formData.turma })
+                        })
+                    ]);
 
-                    const data = await res.json();
+                    const data = await resAlunos.json();
+                    const dataVisitantes = await resVisitantes.json();
 
                     if (data.alunos && Array.isArray(data.alunos)) {
                         if (data.alunos.length > 0) {
@@ -255,6 +275,12 @@
                     } else {
                          setMessage({ type: 'info', text: 'Nenhum dado encontrado ou erro.' });
                     }
+
+                    if (dataVisitantes.visitantes && Array.isArray(dataVisitantes.visitantes)) {
+                        setVisitantes(dataVisitantes.visitantes.map(v => ({ nome: v.nome, presente: true })));
+                    }
+
+                    setTurmaCarregada(true);
                 } catch (error) {
                     console.error(error);
                     setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
@@ -269,9 +295,130 @@
                 ));
             };
 
+            const togglePresencaVisitante = (index) => {
+                setVisitantes(prev => prev.map((v, i) =>
+                    i === index ? { ...v, presente: !v.presente } : v
+                ));
+            };
+
+            const adicionarVisitante = async () => {
+                const nome = novoVisitanteNome.trim();
+                if (!formData.turma) {
+                    setMessage({ type: 'error', text: 'Selecione uma turma primeiro.' });
+                    return;
+                }
+                if (!nome) {
+                    setMessage({ type: 'error', text: 'Digite o nome do visitante.' });
+                    return;
+                }
+
+                setLoading(true);
+                setMessage(null);
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "matricular_visitante", turma: formData.turma, nome })
+                    });
+                    const data = await res.json();
+                    if (data.result === 'success') {
+                        setVisitantes(prev => [...prev, { nome, presente: true }]);
+                        setNovoVisitanteNome('');
+                    } else {
+                        setMessage({ type: 'error', text: data.error || 'Erro ao adicionar visitante.' });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const removerVisitante = async (nome) => {
+                if (!window.confirm(`Remover "${nome}" da lista de visitantes desta turma?`)) return;
+                setLoading(true);
+                setMessage(null);
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "desmatricular_visitante", turma: formData.turma, nome })
+                    });
+                    const data = await res.json();
+                    if (data.result === 'success') {
+                        setVisitantes(prev => prev.filter(v => v.nome !== nome));
+                    } else {
+                        setMessage({ type: 'error', text: data.error || 'Erro ao remover visitante.' });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const adicionarAlunoNaChamada = async () => {
+                const nome = novoAlunoChamada.trim();
+                if (!formData.turma) {
+                    setMessage({ type: 'error', text: 'Selecione uma turma primeiro.' });
+                    return;
+                }
+                if (!nome) {
+                    setMessage({ type: 'error', text: 'Selecione um aluno para adicionar.' });
+                    return;
+                }
+
+                setLoading(true);
+                setMessage(null);
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "matricular_aluno", turma: formData.turma, nomeAluno: nome })
+                    });
+                    const data = await res.json();
+                    if (data.result === 'success') {
+                        setAlunos(prev => [...prev, { nome, presente: true }].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')));
+                        setNovoAlunoChamada('');
+                        await carregarAlunosAtivosDisponiveis();
+                    } else {
+                        setMessage({ type: 'error', text: data.error || 'Erro ao adicionar aluno.' });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const removerAlunoDaChamada = async (nome) => {
+                if (!window.confirm(`Remover "${nome}" desta turma? O histórico de chamadas dele é mantido.`)) return;
+
+                setLoading(true);
+                setMessage(null);
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "desmatricular_aluno", turma: formData.turma, nomeAluno: nome })
+                    });
+                    const data = await res.json();
+                    if (data.result === 'success') {
+                        setAlunos(prev => prev.filter(aluno => aluno.nome !== nome));
+                        await carregarAlunosAtivosDisponiveis();
+                    } else {
+                        setMessage({ type: 'error', text: data.error || 'Erro ao remover aluno.' });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
             const salvarChamada = async () => {
                 if (!formData.professor) {
-                    setMessage({ type: 'error', text: 'Preencha o nome do professor.' });
+                    setMessage({ type: 'error', text: 'Selecione um professor.' });
                     return;
                 }
 
@@ -284,6 +431,10 @@
                     listaPresenca: alunos.map(a => ({
                         aluno: a.nome,
                         status: a.presente ? "Presente" : "Ausente"
+                    })),
+                    listaPresencaVisitantes: visitantes.map(v => ({
+                        nome: v.nome,
+                        status: v.presente ? "Presente" : "Ausente"
                     }))
                 };
 
@@ -297,6 +448,8 @@
 
                     setMessage({ type: 'success', text: 'Chamada Salva!' });
                     setAlunos([]);
+                    setVisitantes([]);
+                    setTurmaCarregada(false);
                     setFormData(prev => ({...prev, turma: ''}));
                     setTimeout(() => setMessage(null), 3000);
                 } catch (error) {
@@ -322,79 +475,33 @@
                 }
             };
 
-            const carregarGerenciamento = async (turma) => {
-                if (!turma) return;
-                setLoadingGerenciamento(true);
-                setMessage(null);
+            const carregarProfessores = async () => {
                 try {
                     const res = await fetch(SCRIPT_URL, {
                         method: 'POST',
-                        body: JSON.stringify({ action: "get_gerenciamento_turma", turma })
+                        body: JSON.stringify({ action: "buscar_professores" })
                     });
                     const data = await res.json();
-                    if (data.result === 'success') {
-                        setGerenciamento(data);
-                    } else {
-                        setMessage({ type: 'error', text: data.error || 'Erro ao carregar turma.' });
+                    if (data.result === 'success' && Array.isArray(data.professores)) {
+                        setProfessores(data.professores);
                     }
                 } catch (error) {
                     console.error(error);
-                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
-                } finally {
-                    setLoadingGerenciamento(false);
                 }
             };
 
-            const matricularAluno = async () => {
-                const nome = novoAlunoNome.trim();
-                if (!turmaGerenciar || !nome) {
-                    setMessage({ type: 'error', text: 'Digite o nome do aluno.' });
-                    return;
-                }
-                setLoadingGerenciamento(true);
-                setMessage(null);
+            const carregarAlunosAtivosDisponiveis = async () => {
                 try {
                     const res = await fetch(SCRIPT_URL, {
                         method: 'POST',
-                        body: JSON.stringify({ action: "matricular_aluno", turma: turmaGerenciar, nomeAluno: nome })
+                        body: JSON.stringify({ action: "buscar_alunos_ativos" })
                     });
                     const data = await res.json();
-                    if (data.result === 'success') {
-                        setMessage({ type: 'success', text: data.acao === 'reativado' ? 'Aluno reativado nesta turma!' : 'Aluno matriculado!' });
-                        setNovoAlunoNome('');
-                        await carregarGerenciamento(turmaGerenciar);
-                    } else {
-                        setMessage({ type: 'error', text: data.error || 'Erro ao matricular aluno.' });
+                    if (data.result === 'success' && Array.isArray(data.alunos)) {
+                        setAlunosAtivosDisponiveis(data.alunos);
                     }
                 } catch (error) {
                     console.error(error);
-                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
-                } finally {
-                    setLoadingGerenciamento(false);
-                }
-            };
-
-            const desmatricularAluno = async (nome) => {
-                if (!window.confirm(`Remover "${nome}" desta turma? O histórico de chamadas dele é mantido.`)) return;
-                setLoadingGerenciamento(true);
-                setMessage(null);
-                try {
-                    const res = await fetch(SCRIPT_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: "desmatricular_aluno", turma: turmaGerenciar, nomeAluno: nome })
-                    });
-                    const data = await res.json();
-                    if (data.result === 'success') {
-                        setMessage({ type: 'success', text: 'Aluno removido da turma.' });
-                        await carregarGerenciamento(turmaGerenciar);
-                    } else {
-                        setMessage({ type: 'error', text: data.error || 'Erro ao remover aluno.' });
-                    }
-                } catch (error) {
-                    console.error(error);
-                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
-                } finally {
-                    setLoadingGerenciamento(false);
                 }
             };
 
@@ -466,25 +573,146 @@
             const mapaFaltasPivot = useMemo(() => {
                 if (!dashboardData || !dashboardData.mapaAlunosPorTurma) return null;
                 const registros = dashboardData.mapaAlunosPorTurma[turmaFiltro];
-                if (!registros) return { alunosList: [], datasList: [], statusMap: {} };
+                if (!registros) return { alunosList: [], datasList: [], statusMap: {}, resumoAlunos: {} };
 
+                const alunosList = [];
                 const alunosSet = new Set();
                 const datasSet = new Set();
                 const statusMap = {};
+                const resumoAlunos = {};
                 registros.filter(r => dentroIntervalo(r.data)).forEach(r => {
-                    alunosSet.add(r.aluno);
+                    if (!alunosSet.has(r.aluno)) {
+                        alunosSet.add(r.aluno);
+                        alunosList.push(r.aluno);
+                    }
                     datasSet.add(r.data);
                     statusMap[`${r.aluno}|${r.data}`] = r.status;
+                    if (!resumoAlunos[r.aluno]) {
+                        resumoAlunos[r.aluno] = { total: 0, presentes: 0 };
+                    }
+                    resumoAlunos[r.aluno].total++;
+                    if (r.status === 'Presente') {
+                        resumoAlunos[r.aluno].presentes++;
+                    }
                 });
                 return {
-                    alunosList: Array.from(alunosSet).sort(),
+                    alunosList: ordenarAlunosAZ ? [...alunosList].sort((a, b) => a.localeCompare(b, 'pt-BR')) : alunosList,
                     datasList: Array.from(datasSet).sort(),
-                    statusMap
+                    statusMap,
+                    resumoAlunos
                 };
-            }, [dashboardData, turmaFiltro, dataInicio, dataFim]);
+            }, [dashboardData, turmaFiltro, dataInicio, dataFim, ordenarAlunosAZ]);
+
+            const historicoVisitantesGeralFiltrado = useMemo(() => {
+                if (!dashboardData || !dashboardData.historicoVisitantesGeral) return dashboardData ? dashboardData.historicoVisitantesGeral : undefined;
+                return dashboardData.historicoVisitantesGeral.filter(h => dentroIntervalo(h.data));
+            }, [dashboardData, dataInicio, dataFim]);
+
+            const visitasNoPeriodo = useMemo(() => {
+                return (historicoVisitantesGeralFiltrado || []).reduce((soma, h) => soma + h.presentes, 0);
+            }, [historicoVisitantesGeralFiltrado]);
+
+            const visitantesRecorrentesNoPeriodo = useMemo(() => {
+                if (!dashboardData || !dashboardData.mapaVisitantesPorTurma) return 0;
+                const contagem = {};
+                Object.keys(dashboardData.mapaVisitantesPorTurma).forEach(turma => {
+                    dashboardData.mapaVisitantesPorTurma[turma].forEach(r => {
+                        if (r.status === 'Presente' && dentroIntervalo(r.data)) {
+                            const chave = `${turma}|${r.nome}`;
+                            contagem[chave] = (contagem[chave] || 0) + 1;
+                        }
+                    });
+                });
+                return Object.values(contagem).filter(n => n > 1).length;
+            }, [dashboardData, dataInicio, dataFim]);
+
+            // Última visita de cada visitante, independente do filtro de período -
+            // útil pra acompanhamento pastoral mesmo olhando um semestre passado.
+            const contatosVisitantes = useMemo(() => {
+                if (!dashboardData || !dashboardData.mapaVisitantesPorTurma) return null;
+                const porPessoa = {};
+                Object.keys(dashboardData.mapaVisitantesPorTurma).forEach(turma => {
+                    dashboardData.mapaVisitantesPorTurma[turma].forEach(r => {
+                        if (r.status !== 'Presente') return;
+                        const chave = `${turma}|${r.nome}`;
+                        if (!porPessoa[chave] || r.data > porPessoa[chave].ultimaVisita) {
+                            porPessoa[chave] = { nome: r.nome, turma, ultimaVisita: r.data };
+                        }
+                    });
+                });
+                return Object.values(porPessoa).sort((a, b) => b.ultimaVisita.localeCompare(a.ultimaVisita));
+            }, [dashboardData]);
+
+            const professoresNoPeriodo = useMemo(() => {
+                if (!dashboardData || !dashboardData.aulasPorProfessor) return [];
+
+                const resumo = {};
+                dashboardData.aulasPorProfessor
+                    .filter(aula => dentroIntervalo(aula.data))
+                    .forEach(aula => {
+                        if (!resumo[aula.professor]) {
+                            resumo[aula.professor] = {
+                                professor: aula.professor,
+                                aulasDadas: 0,
+                                turmasSet: new Set(),
+                                presentes: 0,
+                                ausentes: 0,
+                                total: 0
+                            };
+                        }
+                        resumo[aula.professor].aulasDadas++;
+                        resumo[aula.professor].turmasSet.add(aula.turma);
+                        resumo[aula.professor].presentes += aula.presentes;
+                        resumo[aula.professor].ausentes += aula.ausentes;
+                        resumo[aula.professor].total += aula.total;
+                    });
+
+                return Object.values(resumo)
+                    .map(item => ({
+                        professor: item.professor,
+                        aulasDadas: item.aulasDadas,
+                        turmas: item.turmasSet.size,
+                        presentes: item.presentes,
+                        ausentes: item.ausentes,
+                        total: item.total,
+                        percentualPresenca: item.total > 0 ? (item.presentes / item.total * 100) : 0
+                    }))
+                    .sort((a, b) => b.aulasDadas - a.aulasDadas || a.professor.localeCompare(b.professor, 'pt-BR'));
+            }, [dashboardData, dataInicio, dataFim]);
+
+            const resumoProfessores = useMemo(() => {
+                const professoresComAulas = professoresNoPeriodo.length;
+                const totalAulas = professoresNoPeriodo.reduce((soma, p) => soma + p.aulasDadas, 0);
+                const mediaAulas = professoresComAulas > 0 ? totalAulas / professoresComAulas : 0;
+                const mediaPresenca = totalAulas > 0
+                    ? professoresNoPeriodo.reduce((soma, p) => soma + p.presentes, 0) /
+                      professoresNoPeriodo.reduce((soma, p) => soma + p.total, 0) * 100
+                    : 0;
+                const destaque = professoresNoPeriodo[0];
+
+                return {
+                    professoresComAulas,
+                    totalAulas,
+                    mediaAulas,
+                    mediaPresenca,
+                    destaque
+                };
+            }, [professoresNoPeriodo]);
+
+            const alunosDisponiveisParaChamada = useMemo(() => {
+                const alunosNaTurma = new Set(alunos.map(aluno => aluno.nome));
+                return alunosAtivosDisponiveis.filter(nome => !alunosNaTurma.has(nome));
+            }, [alunosAtivosDisponiveis, alunos]);
 
             // --- HOOKS (EFEITOS) NO TOPO ---
             // IMPORTANTE: Eles devem ser declarados ANTES de qualquer "return"
+
+            useEffect(() => {
+                if (isLoggedIn) {
+                    carregarProfessores();
+                    carregarAlunosAtivosDisponiveis();
+                }
+            }, [isLoggedIn]);
 
             useEffect(() => {
                 // Só carrega dashboard se estiver logado e na aba certa
@@ -492,12 +720,6 @@
                     carregarDashboard();
                 }
             }, [activeTab, isLoggedIn]);
-
-            useEffect(() => {
-                if (isLoggedIn && activeTab === 'turma' && turmaGerenciar) {
-                    carregarGerenciamento(turmaGerenciar);
-                }
-            }, [activeTab, turmaGerenciar, isLoggedIn]);
 
             // Gráfico: Evolução Geral por Domingo (linha % + barras de total)
             useEffect(() => {
@@ -597,6 +819,72 @@
                 }
             }, [historicoTurmaFiltrado, activeTab, isLoggedIn]);
 
+            // Gráfico: Evolução de Visitantes por Domingo
+            useEffect(() => {
+                const historico = historicoVisitantesGeralFiltrado;
+                if (isLoggedIn && activeTab === 'dashboard' && historico && historico.length > 0 && chartVisitantesRef.current) {
+                    if (chartVisitantesInstance.current) chartVisitantesInstance.current.destroy();
+
+                    const labels = historico.map(h => formatarDataCurta(h.data));
+                    const visitas = historico.map(h => h.presentes);
+
+                    chartVisitantesInstance.current = new Chart(chartVisitantesRef.current, {
+                        type: 'bar',
+                        data: {
+                            labels,
+                            datasets: [{ label: 'Visitas', data: visitas, backgroundColor: '#f59e0b', borderRadius: 4 }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                        }
+                    });
+                }
+            }, [historicoVisitantesGeralFiltrado, activeTab, isLoggedIn]);
+
+            useEffect(() => {
+                if (isLoggedIn && activeTab === 'dashboard' && professoresNoPeriodo.length > 0 && chartProfessoresRef.current) {
+                    if (chartProfessoresInstance.current) chartProfessoresInstance.current.destroy();
+
+                    const topProfessores = professoresNoPeriodo.slice(0, 8);
+                    chartProfessoresInstance.current = new Chart(chartProfessoresRef.current, {
+                        type: 'bar',
+                        data: {
+                            labels: topProfessores.map(p => p.professor),
+                            datasets: [
+                                {
+                                    label: 'Aulas dadas',
+                                    data: topProfessores.map(p => p.aulasDadas),
+                                    backgroundColor: '#0f766e',
+                                    borderRadius: 6
+                                },
+                                {
+                                    type: 'line',
+                                    label: '% presença',
+                                    data: topProfessores.map(p => +p.percentualPresenca.toFixed(1)),
+                                    borderColor: '#f59e0b',
+                                    backgroundColor: '#f59e0b',
+                                    tension: 0.3,
+                                    yAxisID: 'yPct'
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: { beginAtZero: true, ticks: { precision: 0 } },
+                                yPct: { type: 'linear', position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+                            }
+                        }
+                    });
+                } else if (chartProfessoresInstance.current) {
+                    chartProfessoresInstance.current.destroy();
+                    chartProfessoresInstance.current = null;
+                }
+            }, [professoresNoPeriodo, activeTab, isLoggedIn]);
+
 
             // --- RENDERIZAÇÃO CONDICIONAL ---
             // Agora que todos os hooks foram declarados, podemos retornar a tela de login
@@ -634,9 +922,6 @@
                             <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
                                 <Icon name="bar-chart-2" className="w-5 h-5" /> Estatísticas
                             </button>
-                            <button onClick={() => setActiveTab('turma')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'turma' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
-                                <Icon name="users" className="w-5 h-5" /> Turma
-                            </button>
                         </div>
 
                         {/* Mensagens */}
@@ -662,7 +947,12 @@
                                         </div>
                                         <div>
                                             <label className="text-xs font-bold text-slate-500 uppercase ml-1">Professor</label>
-                                            <input type="text" name="professor" placeholder="Nome" value={formData.professor} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 mt-1 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                            <select name="professor" value={formData.professor} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 mt-1 font-medium focus:ring-2 focus:ring-indigo-500 outline-none">
+                                                <option value="">Selecione um professor</option>
+                                                {professores.map((prof) => (
+                                                    <option key={prof} value={prof}>{prof}</option>
+                                                ))}
+                                            </select>
                                         </div>
                                         <div className="grid grid-cols-2 gap-2">
                                             <input type="number" name="ano" value={formData.ano} onChange={handleInputChange} className="bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-center font-bold" />
@@ -684,27 +974,109 @@
                                     </button>
                                 </div>
 
-                                {alunos.length > 0 && (
-                                    <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 fade-in border-l-4 border-l-indigo-500">
-                                        <div className="flex justify-between items-center mb-6">
-                                            <h3 className="font-black text-lg text-slate-800">Lista de Presença</h3>
-                                            <span className="text-xs font-bold bg-slate-100 px-3 py-1 rounded-full">{alunos.length} Alunos</span>
-                                        </div>
-                                        <div className="space-y-3 mb-8">
-                                            {alunos.map((aluno, idx) => (
-                                                <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border ${aluno.presente ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                                                    <span className={`font-bold text-sm ${aluno.presente ? 'text-indigo-900' : 'text-slate-500'}`}>{aluno.nome}</span>
-                                                    <div className="relative inline-block w-12 h-6 align-middle select-none">
-                                                        <input type="checkbox" checked={aluno.presente} onChange={() => togglePresenca(idx)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 left-0 top-0 border-slate-300 shadow-sm" style={{right: aluno.presente ? '0' : 'auto', left: aluno.presente ? 'auto' : '0', borderColor: aluno.presente ? '#4f46e5' : '#e2e8f0'}} />
-                                                        <div className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-300 ${aluno.presente ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
+                                {turmaCarregada && (
+                                    <>
+                                        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 fade-in border-l-4 border-l-indigo-500">
+                                            <div className="flex justify-between items-center mb-6">
+                                                <h3 className="font-black text-lg text-slate-800">Lista de Presença</h3>
+                                                <span className="text-xs font-bold bg-slate-100 px-3 py-1 rounded-full">{alunos.length} Alunos</span>
+                                            </div>
+                                            {alunos.length > 0 ? (
+                                                <>
+                                                    <div className="mb-3 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-400">
+                                                        <span>Aluno</span>
+                                                        <span className="text-center">Presença</span>
+                                                        <span className="text-center">Excluir</span>
                                                     </div>
+                                                    <div className="space-y-3">
+                                                        {alunos.map((aluno, idx) => (
+                                                            <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border ${aluno.presente ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                                                                <span className={`font-bold text-sm ${aluno.presente ? 'text-indigo-900' : 'text-slate-500'}`}>{aluno.nome}</span>
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className="relative inline-block w-12 h-6 align-middle select-none">
+                                                                        <input type="checkbox" checked={aluno.presente} onChange={() => togglePresenca(idx)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 left-0 top-0 border-slate-300 shadow-sm" style={{right: aluno.presente ? '0' : 'auto', left: aluno.presente ? 'auto' : '0', borderColor: aluno.presente ? '#4f46e5' : '#e2e8f0'}} />
+                                                                        <div className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-300 ${aluno.presente ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
+                                                                    </div>
+                                                                    <button onClick={() => removerAlunoDaChamada(aluno.nome)} disabled={loading} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors">
+                                                                        <Icon name="trash-2" className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <AvisoVazio texto="Nenhum aluno nesta turma ainda." />
+                                            )}
+                                            <div className="border-t border-slate-100 pt-4 mt-6">
+                                                <p className="text-xs font-bold text-slate-500 uppercase mb-3">Adicionar Aluno na Turma</p>
+                                                <div className="grid sm:grid-cols-[1fr_auto] gap-2">
+                                                    <select
+                                                        value={novoAlunoChamada}
+                                                        onChange={(e) => setNovoAlunoChamada(e.target.value)}
+                                                        className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                    >
+                                                        <option value="">Selecione um aluno ativo</option>
+                                                        {alunosDisponiveisParaChamada.map((nome) => (
+                                                            <option key={nome} value={nome}>{nome}</option>
+                                                        ))}
+                                                    </select>
+                                                    <button onClick={adicionarAlunoNaChamada} disabled={loading || !novoAlunoChamada} className="bg-indigo-600 text-white font-bold px-5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+                                                        <Icon name="user-plus" className="w-4 h-4" /> Adicionar
+                                                    </button>
                                                 </div>
-                                            ))}
+                                            </div>
                                         </div>
+
+                                        {/* Visitantes */}
+                                        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 fade-in border-l-4 border-l-amber-400">
+                                            <div className="flex justify-between items-center mb-6">
+                                                <h3 className="font-black text-lg text-slate-800">Visitantes</h3>
+                                                <span className="text-xs font-bold bg-slate-100 px-3 py-1 rounded-full">{visitantes.length} Visitante{visitantes.length === 1 ? '' : 's'}</span>
+                                            </div>
+
+                                            {visitantes.length > 0 && (
+                                                <div className="space-y-3 mb-6">
+                                                    {visitantes.map((v, idx) => (
+                                                        <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border ${v.presente ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                                                            <div>
+                                                                <p className={`font-bold text-sm ${v.presente ? 'text-amber-900' : 'text-slate-500'}`}>{v.nome}</p>
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="relative inline-block w-12 h-6 align-middle select-none">
+                                                                    <input type="checkbox" checked={v.presente} onChange={() => togglePresencaVisitante(idx)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 left-0 top-0 border-slate-300 shadow-sm" style={{right: v.presente ? '0' : 'auto', left: v.presente ? 'auto' : '0', borderColor: v.presente ? '#f59e0b' : '#e2e8f0'}} />
+                                                                    <div className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-300 ${v.presente ? 'bg-amber-500' : 'bg-slate-300'}`}></div>
+                                                                </div>
+                                                                <button onClick={() => removerVisitante(v.nome)} disabled={loading} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors">
+                                                                    <Icon name="x" className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="border-t border-slate-100 pt-4">
+                                                <p className="text-xs font-bold text-slate-500 uppercase mb-3">Adicionar Visitante</p>
+                                                <div className="grid sm:grid-cols-[1fr_auto] gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={novoVisitanteNome}
+                                                        onChange={(e) => setNovoVisitanteNome(e.target.value)}
+                                                        placeholder="Nome completo"
+                                                        className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 focus:ring-2 focus:ring-amber-400 outline-none"
+                                                    />
+                                                    <button onClick={adicionarVisitante} disabled={loading || !novoVisitanteNome.trim()} className="bg-amber-500 text-white font-bold px-5 rounded-xl shadow hover:bg-amber-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+                                                        <Icon name="user-plus" className="w-4 h-4" /> Adicionar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         <button onClick={salvarChamada} disabled={loading} className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl shadow hover:bg-emerald-700 transition-colors flex justify-center items-center gap-2">
                                             <Icon name="save" className="w-5 h-5" /> Confirmar Chamada
                                         </button>
-                                    </div>
+                                    </>
                                 )}
                             </div>
                         )}
@@ -745,12 +1117,14 @@
                                                 </p>
                                             </div>
                                             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
-                                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Presentes</p>
-                                                <p className="text-3xl font-black text-slate-700">{totaisGerais.presentes}</p>
+                                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Quantidade de Turmas</p>
+                                                <p className="text-3xl font-black text-red-500">
+                                                    {dashboardData.totalTurmas !== undefined ? dashboardData.totalTurmas : '-'}
+                                                </p>
                                             </div>
                                             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
-                                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Ausentes</p>
-                                                <p className="text-3xl font-black text-red-500">{totaisGerais.ausentes}</p>
+                                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Total de Professores</p>
+                                                <p className="text-3xl font-black text-slate-700">{dashboardData.totalProfessores !== undefined ? dashboardData.totalProfessores : '-'}</p>
                                             </div>
                                         </div>
 
@@ -804,9 +1178,18 @@
                                         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                                             <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                                                 <h3 className="font-bold text-slate-700">Acompanhamento por Turma</h3>
-                                                <select value={turmaFiltro} onChange={(e) => setTurmaFiltro(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-4 font-bold text-sm">
-                                                    {TURMAS.map(t => <option key={t} value={t}>{t}</option>)}
-                                                </select>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <select value={turmaFiltro} onChange={(e) => setTurmaFiltro(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-4 font-bold text-sm">
+                                                        {TURMAS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                    </select>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOrdenarAlunosAZ(prev => !prev)}
+                                                        className={`px-4 py-2 rounded-xl text-sm font-bold border transition-colors ${ordenarAlunosAZ ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+                                                    >
+                                                        {ordenarAlunosAZ ? 'Ordem A-Z ativa' : 'Ordenar A-Z'}
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             <div className="space-y-8">
@@ -836,6 +1219,7 @@
                                                                     <thead>
                                                                         <tr>
                                                                             <th className="sticky left-0 bg-white text-left p-2 font-bold text-slate-600 border-b border-slate-100">Aluno</th>
+                                                                            <th className="bg-white text-center p-2 font-bold text-slate-600 border-b border-slate-100 whitespace-nowrap">% Presença</th>
                                                                             {mapaFaltasPivot.datasList.map(d => (
                                                                                 <th key={d} className="p-2 font-bold text-slate-400 border-b border-slate-100 whitespace-nowrap">{formatarDataCurta(d)}</th>
                                                                             ))}
@@ -845,6 +1229,11 @@
                                                                         {mapaFaltasPivot.alunosList.map(aluno => (
                                                                             <tr key={aluno} className="hover:bg-slate-50">
                                                                                 <td className="sticky left-0 bg-white p-2 font-medium text-slate-700 border-b border-slate-50 whitespace-nowrap">{aluno}</td>
+                                                                                <td className="bg-white p-2 text-center font-bold text-slate-600 border-b border-slate-50 whitespace-nowrap">
+                                                                                    {mapaFaltasPivot.resumoAlunos[aluno] && mapaFaltasPivot.resumoAlunos[aluno].total > 0
+                                                                                        ? `${((mapaFaltasPivot.resumoAlunos[aluno].presentes / mapaFaltasPivot.resumoAlunos[aluno].total) * 100).toFixed(0)}%`
+                                                                                        : '0%'}
+                                                                                </td>
                                                                                 {mapaFaltasPivot.datasList.map(d => {
                                                                                     const status = mapaFaltasPivot.statusMap[`${aluno}|${d}`];
                                                                                     return (
@@ -868,75 +1257,127 @@
                                                 </div>
                                             </div>
                                         </div>
-                                    </>
-                                )}
-                            </div>
-                        )}
 
-                        {/* Turma: matricular / desmatricular alunos */}
-                        {activeTab === 'turma' && (
-                            <div className="fade-in space-y-6">
-                                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-                                    <div className="flex items-center gap-2 mb-6 text-indigo-900 border-b border-slate-100 pb-2">
-                                        <Icon name="users" className="w-5 h-5" />
-                                        <h2 className="font-black text-lg uppercase">Gerenciar Turma</h2>
-                                    </div>
-                                    <select value={turmaGerenciar} onChange={(e) => { setTurmaGerenciar(e.target.value); setGerenciamento(null); }} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-medium focus:ring-2 focus:ring-indigo-500 outline-none">
-                                        <option value="">Selecione a Turma...</option>
-                                        {TURMAS.map(t => <option key={t} value={t}>{t}</option>)}
-                                    </select>
-                                </div>
+                                        {/* Visitantes: visão da igreja inteira, cards e gráfico respeitam o filtro de período */}
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                            <h3 className="font-bold text-slate-700 mb-6 flex items-center gap-2">
+                                                <Icon name="user-plus" className="w-5 h-5 text-amber-500" /> Visitantes
+                                            </h3>
 
-                                {loadingGerenciamento && !gerenciamento && <div className="text-center p-10 text-slate-400 font-bold">Carregando...</div>}
-
-                                {turmaGerenciar && gerenciamento && (
-                                    <>
-                                        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 border-l-4 border-l-indigo-500">
-                                            <h3 className="font-black text-lg text-slate-800 mb-4">Adicionar Aluno</h3>
-                                            <div className="flex gap-2">
-                                                <input
-                                                    type="text"
-                                                    value={novoAlunoNome}
-                                                    onChange={(e) => setNovoAlunoNome(e.target.value)}
-                                                    placeholder="Nome completo do aluno"
-                                                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                />
-                                                <button onClick={matricularAluno} disabled={loadingGerenciamento || !novoAlunoNome.trim()} className="bg-indigo-600 text-white font-bold px-5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50">
-                                                    <Icon name="user-plus" className="w-4 h-4" /> Matricular
-                                                </button>
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                                                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 text-center">
+                                                    <p className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-1">Total de Visitantes</p>
+                                                    <p className="text-2xl font-black text-amber-700">{dashboardData.totalVisitantesAtivos !== undefined ? dashboardData.totalVisitantesAtivos : '-'}</p>
+                                                </div>
+                                                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 text-center">
+                                                    <p className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-1">Visitas no Período</p>
+                                                    <p className="text-2xl font-black text-amber-700">{visitasNoPeriodo}</p>
+                                                </div>
+                                                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 text-center">
+                                                    <p className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-1">Recorrentes no Período</p>
+                                                    <p className="text-2xl font-black text-amber-700">{visitantesRecorrentesNoPeriodo}</p>
+                                                </div>
                                             </div>
-                                            {(() => {
-                                                const nomeDigitado = novoAlunoNome.trim().toUpperCase();
-                                                if (!nomeDigitado) return null;
-                                                const reativavel = gerenciamento.inativos.find(n => n.toUpperCase() === nomeDigitado);
-                                                const outraTurma = gerenciamento.outrasTurmas.find(o => o.nome.toUpperCase() === nomeDigitado);
-                                                if (reativavel) {
-                                                    return <p className="text-xs font-bold text-amber-600 mt-2">Já cadastrado antes nesta turma — será reativado.</p>;
-                                                }
-                                                if (outraTurma) {
-                                                    return <p className="text-xs font-bold text-amber-600 mt-2">Este nome já está matriculado na turma "{outraTurma.turma}".</p>;
-                                                }
-                                                return null;
-                                            })()}
+
+                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Evolução de Visitantes por Domingo</p>
+                                            {dashboardData.historicoVisitantesGeral === undefined ? (
+                                                <AvisoBackend texto="O backend ainda não está enviando histórico de visitantes." />
+                                            ) : historicoVisitantesGeralFiltrado.length === 0 ? (
+                                                <AvisoVazio texto="Nenhuma visita registrada neste período." />
+                                            ) : (
+                                                <div className="relative h-56 w-full mb-8">
+                                                    <canvas ref={chartVisitantesRef}></canvas>
+                                                </div>
+                                            )}
+
+                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Contatos de Visitantes</p>
+                                            {dashboardData.mapaVisitantesPorTurma === undefined ? (
+                                                <AvisoBackend texto="O backend ainda não está enviando o mapa de visitantes." />
+                                            ) : !contatosVisitantes || contatosVisitantes.length === 0 ? (
+                                                <AvisoVazio texto="Nenhuma visita registrada ainda." />
+                                            ) : (
+                                                <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                                                    <table className="border-collapse text-sm w-full">
+                                                        <thead>
+                                                            <tr className="bg-slate-50">
+                                                                <th className="text-left p-3 font-bold text-slate-600 border-b border-slate-100">Nome</th>
+                                                                <th className="text-left p-3 font-bold text-slate-600 border-b border-slate-100">Turma</th>
+                                                                <th className="text-left p-3 font-bold text-slate-600 border-b border-slate-100">Última Visita</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {contatosVisitantes.map((c, idx) => (
+                                                                <tr key={idx} className="hover:bg-slate-50">
+                                                                    <td className="p-3 font-medium text-slate-800 border-b border-slate-50">{c.nome}</td>
+                                                                    <td className="p-3 text-slate-500 border-b border-slate-50">{c.turma}</td>
+                                                                    <td className="p-3 text-slate-500 border-b border-slate-50">{formatarDataCurta(c.ultimaVisita)}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
                                         </div>
 
-                                        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-                                            <div className="flex justify-between items-center mb-6">
-                                                <h3 className="font-black text-lg text-slate-800">Alunos Matriculados</h3>
-                                                <span className="text-xs font-bold bg-slate-100 px-3 py-1 rounded-full">{gerenciamento.ativos.length} Alunos</span>
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                                                <h3 className="font-bold text-slate-700">Professores e Aulas</h3>
+                                                <span className="text-xs font-bold bg-teal-50 text-teal-700 px-3 py-1 rounded-full">
+                                                    Baseado nas chamadas do período
+                                                </span>
                                             </div>
-                                            {gerenciamento.ativos.length === 0 ? (
-                                                <AvisoVazio texto="Nenhum aluno matriculado nesta turma ainda." />
+
+                                            {dashboardData.aulasPorProfessor === undefined ? (
+                                                <AvisoBackend texto="O backend ainda não está enviando dados de professores por aula." />
+                                            ) : professoresNoPeriodo.length === 0 ? (
+                                                <AvisoVazio texto="Nenhuma aula com professor identificado neste período." />
                                             ) : (
-                                                <div className="space-y-3">
-                                                    {gerenciamento.ativos.map((nome) => (
-                                                        <div key={nome} className="flex items-center justify-between p-4 rounded-2xl border bg-slate-50 border-slate-100">
-                                                            <span className="font-bold text-sm text-slate-800">{nome}</span>
-                                                            <button onClick={() => desmatricularAluno(nome)} disabled={loadingGerenciamento} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
-                                                                <Icon name="x" className="w-4 h-4" />
-                                                            </button>
+                                                <div className="space-y-8">
+                                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                                        <div className="bg-teal-50 p-4 rounded-2xl border border-teal-100 text-center">
+                                                            <p className="text-xs font-bold text-teal-700 uppercase tracking-wider mb-1">Professores no Período</p>
+                                                            <p className="text-2xl font-black text-teal-900">{resumoProfessores.professoresComAulas}</p>
                                                         </div>
-                                                    ))}
+                                                        <div className="bg-teal-50 p-4 rounded-2xl border border-teal-100 text-center">
+                                                            <p className="text-xs font-bold text-teal-700 uppercase tracking-wider mb-1">Aulas Dadas</p>
+                                                            <p className="text-2xl font-black text-teal-900">{resumoProfessores.totalAulas}</p>
+                                                        </div>
+                                                        <div className="bg-teal-50 p-4 rounded-2xl border border-teal-100 text-center">
+                                                            <p className="text-xs font-bold text-teal-700 uppercase tracking-wider mb-1">Média por Professor</p>
+                                                            <p className="text-2xl font-black text-teal-900">{resumoProfessores.mediaAulas.toFixed(1)}</p>
+                                                        </div>
+                                                        <div className="bg-teal-50 p-4 rounded-2xl border border-teal-100 text-center">
+                                                            <p className="text-xs font-bold text-teal-700 uppercase tracking-wider mb-1">Presença Média</p>
+                                                            <p className="text-2xl font-black text-teal-900">{resumoProfessores.mediaPresenca.toFixed(0)}%</p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-6">
+                                                        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4">
+                                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Ranking de Professores</p>
+                                                            <div className="relative h-72 w-full">
+                                                                <canvas ref={chartProfessoresRef}></canvas>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4">
+                                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Resumo Individual</p>
+                                                            <div className="space-y-3 max-h-72 overflow-auto pr-1">
+                                                                {professoresNoPeriodo.map((prof) => (
+                                                                    <div key={prof.professor} className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center justify-between gap-3">
+                                                                        <div>
+                                                                            <p className="font-bold text-sm text-slate-800">{prof.professor}</p>
+                                                                            <p className="text-xs text-slate-400">{prof.aulasDadas} aula{prof.aulasDadas === 1 ? '' : 's'} · {prof.turmas} turma{prof.turmas === 1 ? '' : 's'}</p>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <p className="text-lg font-black text-teal-700">{prof.percentualPresenca.toFixed(0)}%</p>
+                                                                            <p className="text-xs text-slate-400">{prof.presentes}/{prof.total} presenças</p>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -944,6 +1385,7 @@
                                 )}
                             </div>
                         )}
+
                     </main>
 
                     <footer className="py-8 text-center text-slate-400 mt-auto bg-white border-t border-slate-50">
@@ -996,10 +1438,12 @@
               + '<ul style="margin:6px 0 0 18px;font-size:13px;color:#475569;line-height:1.6">'
               + '<li>Verifique sua conexao com a internet e recarregue (F5).</li>'
               + '<li>Desative bloqueadores de anuncios/scripts para esta pagina.</li>'
-              + '<li>Em rede corporativa/escolar, o acesso a <code>unpkg.com</code> ou <code>jsdelivr.net</code> pode estar bloqueado — tente outra rede.</li>'
+              + '<li>Em rede corporativa/escolar, o acesso a <code>unpkg.com</code> ou <code>jsdelivr.net</code> pode estar bloqueado - tente outra rede.</li>'
               + '</ul></div>';
         }
         window.addEventListener('load', function () { setTimeout(mostrarDiagnostico, 2500); });
     </script>
 </body>
 </html>
+
+
