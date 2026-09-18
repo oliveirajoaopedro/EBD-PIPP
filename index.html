@@ -205,6 +205,7 @@
 
             const [alunos, setAlunos] = useState([]);
             const [turmaCarregada, setTurmaCarregada] = useState(false);
+            const [modoEdicao, setModoEdicao] = useState(false);
             const [visitantes, setVisitantes] = useState([]);
             const [novoVisitanteNome, setNovoVisitanteNome] = useState('');
             const [professores, setProfessores] = useState([]);
@@ -231,10 +232,11 @@
             const handleInputChange = (e) => {
                 const { name, value } = e.target;
                 setFormData(prev => ({ ...prev, [name]: value }));
-                if (name === 'turma') {
+                if (name === 'turma' || name === 'dataAula') {
                     setAlunos([]);
                     setVisitantes([]);
                     setTurmaCarregada(false);
+                    setModoEdicao(false);
                     setNovoAlunoChamada('');
                 }
             };
@@ -250,6 +252,7 @@
                 setAlunos([]);
                 setVisitantes([]);
                 setTurmaCarregada(false);
+                setModoEdicao(false);
 
                 try {
                     const [resAlunos, resVisitantes] = await Promise.all([
@@ -280,6 +283,49 @@
                         setVisitantes(dataVisitantes.visitantes.map(v => ({ nome: v.nome, presente: true })));
                     }
 
+                    setTurmaCarregada(true);
+                } catch (error) {
+                    console.error(error);
+                    setMessage({ type: 'error', text: 'Erro de conexão. Verifique o link.' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // Carrega uma chamada já salva (turma + data) pra corrigir status de alunos
+            // e visitantes que já foram registrados naquele dia.
+            const carregarChamadaExistente = async () => {
+                if (!formData.turma) {
+                    setMessage({ type: 'error', text: 'Selecione uma turma.' });
+                    return;
+                }
+                if (!formData.dataAula) {
+                    setMessage({ type: 'error', text: 'Selecione uma data.' });
+                    return;
+                }
+
+                setLoading(true);
+                setMessage(null);
+                setAlunos([]);
+                setVisitantes([]);
+                setTurmaCarregada(false);
+                setModoEdicao(false);
+
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "buscar_chamada_data", turma: formData.turma, dataAula: formData.dataAula })
+                    });
+                    const data = await res.json();
+
+                    if (!data.encontrada) {
+                        setMessage({ type: 'info', text: 'Nenhuma chamada encontrada para essa data e turma.' });
+                        return;
+                    }
+
+                    setAlunos((data.alunos || []).map(a => ({ nome: a.nome, presente: a.status === 'Presente' })));
+                    setVisitantes((data.visitantes || []).map(v => ({ nome: v.nome, presente: v.status === 'Presente' })));
+                    setModoEdicao(true);
                     setTurmaCarregada(true);
                 } catch (error) {
                     console.error(error);
@@ -423,10 +469,10 @@
                 }
 
                 setLoading(true);
-                setMessage({ type: 'info', text: 'Salvando...' });
+                setMessage({ type: 'info', text: modoEdicao ? 'Salvando alterações...' : 'Salvando...' });
 
                 const payload = {
-                    action: "salvar_chamada",
+                    action: modoEdicao ? "editar_chamada" : "salvar_chamada",
                     ...formData,
                     listaPresenca: alunos.map(a => ({
                         aluno: a.nome,
@@ -446,10 +492,11 @@
                         body: JSON.stringify(payload)
                     });
 
-                    setMessage({ type: 'success', text: 'Chamada Salva!' });
+                    setMessage({ type: 'success', text: modoEdicao ? 'Alterações salvas!' : 'Chamada Salva!' });
                     setAlunos([]);
                     setVisitantes([]);
                     setTurmaCarregada(false);
+                    setModoEdicao(false);
                     setFormData(prev => ({...prev, turma: ''}));
                     setTimeout(() => setMessage(null), 3000);
                 } catch (error) {
@@ -969,13 +1016,24 @@
                                         </div>
                                     </div>
 
-                                    <button onClick={carregarAlunos} disabled={loading} className="w-full mt-6 bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex justify-center items-center gap-2">
-                                        {loading ? "Carregando..." : <><Icon name="search" className="w-4 h-4" /> Buscar Alunos</>}
-                                    </button>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
+                                        <button onClick={carregarAlunos} disabled={loading} className="bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex justify-center items-center gap-2">
+                                            {loading ? "Carregando..." : <><Icon name="search" className="w-4 h-4" /> Nova Chamada</>}
+                                        </button>
+                                        <button onClick={carregarChamadaExistente} disabled={loading} className="bg-slate-700 text-white font-bold py-3.5 rounded-xl shadow hover:bg-slate-800 transition-colors flex justify-center items-center gap-2">
+                                            {loading ? "Carregando..." : <><Icon name="edit-3" className="w-4 h-4" /> Editar Chamada</>}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {turmaCarregada && (
                                     <>
+                                        {modoEdicao && (
+                                            <div className="bg-slate-800 text-white text-sm font-bold px-5 py-3 rounded-2xl flex items-center gap-2 fade-in">
+                                                <Icon name="edit-3" className="w-4 h-4 flex-shrink-0" />
+                                                Editando a chamada de {formatarDataCurta(formData.dataAula)} — ajuste os status e salve as alterações.
+                                            </div>
+                                        )}
                                         <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 fade-in border-l-4 border-l-indigo-500">
                                             <div className="flex justify-between items-center mb-6">
                                                 <h3 className="font-black text-lg text-slate-800">Lista de Presença</h3>
@@ -983,10 +1041,10 @@
                                             </div>
                                             {alunos.length > 0 ? (
                                                 <>
-                                                    <div className="mb-3 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-400">
+                                                    <div className={`mb-3 grid ${modoEdicao ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-[minmax(0,1fr)_auto_auto]'} gap-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-400`}>
                                                         <span>Aluno</span>
                                                         <span className="text-center">Presença</span>
-                                                        <span className="text-center">Excluir</span>
+                                                        {!modoEdicao && <span className="text-center">Excluir</span>}
                                                     </div>
                                                     <div className="space-y-3">
                                                         {alunos.map((aluno, idx) => (
@@ -997,35 +1055,39 @@
                                                                         <input type="checkbox" checked={aluno.presente} onChange={() => togglePresenca(idx)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 left-0 top-0 border-slate-300 shadow-sm" style={{right: aluno.presente ? '0' : 'auto', left: aluno.presente ? 'auto' : '0', borderColor: aluno.presente ? '#4f46e5' : '#e2e8f0'}} />
                                                                         <div className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-300 ${aluno.presente ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
                                                                     </div>
-                                                                    <button onClick={() => removerAlunoDaChamada(aluno.nome)} disabled={loading} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors">
-                                                                        <Icon name="trash-2" className="w-4 h-4" />
-                                                                    </button>
+                                                                    {!modoEdicao && (
+                                                                        <button onClick={() => removerAlunoDaChamada(aluno.nome)} disabled={loading} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors">
+                                                                            <Icon name="trash-2" className="w-4 h-4" />
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         ))}
                                                     </div>
                                                 </>
                                             ) : (
-                                                <AvisoVazio texto="Nenhum aluno nesta turma ainda." />
+                                                <AvisoVazio texto={modoEdicao ? "Nenhum aluno registrado nessa chamada." : "Nenhum aluno nesta turma ainda."} />
                                             )}
-                                            <div className="border-t border-slate-100 pt-4 mt-6">
-                                                <p className="text-xs font-bold text-slate-500 uppercase mb-3">Adicionar Aluno na Turma</p>
-                                                <div className="grid sm:grid-cols-[1fr_auto] gap-2">
-                                                    <select
-                                                        value={novoAlunoChamada}
-                                                        onChange={(e) => setNovoAlunoChamada(e.target.value)}
-                                                        className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                    >
-                                                        <option value="">Selecione um aluno ativo</option>
-                                                        {alunosDisponiveisParaChamada.map((nome) => (
-                                                            <option key={nome} value={nome}>{nome}</option>
-                                                        ))}
-                                                    </select>
-                                                    <button onClick={adicionarAlunoNaChamada} disabled={loading || !novoAlunoChamada} className="bg-indigo-600 text-white font-bold px-5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
-                                                        <Icon name="user-plus" className="w-4 h-4" /> Adicionar
-                                                    </button>
+                                            {!modoEdicao && (
+                                                <div className="border-t border-slate-100 pt-4 mt-6">
+                                                    <p className="text-xs font-bold text-slate-500 uppercase mb-3">Adicionar Aluno na Turma</p>
+                                                    <div className="grid sm:grid-cols-[1fr_auto] gap-2">
+                                                        <select
+                                                            value={novoAlunoChamada}
+                                                            onChange={(e) => setNovoAlunoChamada(e.target.value)}
+                                                            className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                        >
+                                                            <option value="">Selecione um aluno ativo</option>
+                                                            {alunosDisponiveisParaChamada.map((nome) => (
+                                                                <option key={nome} value={nome}>{nome}</option>
+                                                            ))}
+                                                        </select>
+                                                        <button onClick={adicionarAlunoNaChamada} disabled={loading || !novoAlunoChamada} className="bg-indigo-600 text-white font-bold px-5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+                                                            <Icon name="user-plus" className="w-4 h-4" /> Adicionar
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            )}
                                         </div>
 
                                         {/* Visitantes */}
@@ -1047,34 +1109,38 @@
                                                                     <input type="checkbox" checked={v.presente} onChange={() => togglePresencaVisitante(idx)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 left-0 top-0 border-slate-300 shadow-sm" style={{right: v.presente ? '0' : 'auto', left: v.presente ? 'auto' : '0', borderColor: v.presente ? '#f59e0b' : '#e2e8f0'}} />
                                                                     <div className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-300 ${v.presente ? 'bg-amber-500' : 'bg-slate-300'}`}></div>
                                                                 </div>
-                                                                <button onClick={() => removerVisitante(v.nome)} disabled={loading} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors">
-                                                                    <Icon name="x" className="w-4 h-4" />
-                                                                </button>
+                                                                {!modoEdicao && (
+                                                                    <button onClick={() => removerVisitante(v.nome)} disabled={loading} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors">
+                                                                        <Icon name="x" className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     ))}
                                                 </div>
                                             )}
 
-                                            <div className="border-t border-slate-100 pt-4">
-                                                <p className="text-xs font-bold text-slate-500 uppercase mb-3">Adicionar Visitante</p>
-                                                <div className="grid sm:grid-cols-[1fr_auto] gap-2">
-                                                    <input
-                                                        type="text"
-                                                        value={novoVisitanteNome}
-                                                        onChange={(e) => setNovoVisitanteNome(e.target.value)}
-                                                        placeholder="Nome completo"
-                                                        className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 focus:ring-2 focus:ring-amber-400 outline-none"
-                                                    />
-                                                    <button onClick={adicionarVisitante} disabled={loading || !novoVisitanteNome.trim()} className="bg-amber-500 text-white font-bold px-5 rounded-xl shadow hover:bg-amber-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
-                                                        <Icon name="user-plus" className="w-4 h-4" /> Adicionar
-                                                    </button>
+                                            {!modoEdicao && (
+                                                <div className="border-t border-slate-100 pt-4">
+                                                    <p className="text-xs font-bold text-slate-500 uppercase mb-3">Adicionar Visitante</p>
+                                                    <div className="grid sm:grid-cols-[1fr_auto] gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={novoVisitanteNome}
+                                                            onChange={(e) => setNovoVisitanteNome(e.target.value)}
+                                                            placeholder="Nome completo"
+                                                            className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 focus:ring-2 focus:ring-amber-400 outline-none"
+                                                        />
+                                                        <button onClick={adicionarVisitante} disabled={loading || !novoVisitanteNome.trim()} className="bg-amber-500 text-white font-bold px-5 rounded-xl shadow hover:bg-amber-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+                                                            <Icon name="user-plus" className="w-4 h-4" /> Adicionar
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            )}
                                         </div>
 
                                         <button onClick={salvarChamada} disabled={loading} className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl shadow hover:bg-emerald-700 transition-colors flex justify-center items-center gap-2">
-                                            <Icon name="save" className="w-5 h-5" /> Confirmar Chamada
+                                            <Icon name="save" className="w-5 h-5" /> {modoEdicao ? 'Salvar Alterações' : 'Confirmar Chamada'}
                                         </button>
                                     </>
                                 )}
@@ -1445,5 +1511,4 @@
     </script>
 </body>
 </html>
-
 
