@@ -114,14 +114,29 @@
             const [user, setUser] = useState('');
             const [pass, setPass] = useState('');
             const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
 
-            const handleLogin = (e) => {
+            const handleLogin = async (e) => {
                 e.preventDefault();
-                if (user.toUpperCase() === 'PIPPEBD' && pass === '@1934') {
-                    onLogin();
-                } else {
-                    setError('Acesso negado. Verifique os dados.');
+                setLoading(true);
+                setError('');
+                try {
+                    const res = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "validar_login", usuario: user, senha: pass })
+                    });
+                    const data = await res.json();
+                    if (data.result === 'success') {
+                        onLogin();
+                        return;
+                    }
+                    setError(data.error || 'Acesso negado. Verifique os dados.');
                     setPass('');
+                } catch (error) {
+                    console.error(error);
+                    setError('Não foi possível validar a senha. Verifique a conexão.');
+                } finally {
+                    setLoading(false);
                 }
             };
 
@@ -172,8 +187,8 @@
                                 </div>
                             )}
 
-                            <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-indigo-700 transition-all transform active:scale-[0.98] mt-4 flex justify-center items-center gap-2">
-                                Entrar no Sistema <Icon name="arrow-right" className="w-4 h-4" />
+                            <button type="submit" disabled={loading || !user || !pass} className="w-full bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-indigo-700 transition-all transform active:scale-[0.98] mt-4 flex justify-center items-center gap-2 disabled:opacity-50">
+                                {loading ? 'Validando...' : <>Entrar no Sistema <Icon name="arrow-right" className="w-4 h-4" /></>}
                             </button>
                         </form>
 
@@ -1057,7 +1072,7 @@
                                                                     </div>
                                                                     {!modoEdicao && (
                                                                         <button onClick={() => removerAlunoDaChamada(aluno.nome)} disabled={loading} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors">
-                                                                            <Icon name="trash-2" className="w-4 h-4" />
+                                                                            <Icon name="x" className="w-5 h-5" />
                                                                         </button>
                                                                     )}
                                                                 </div>
@@ -1511,4 +1526,3 @@
     </script>
 </body>
 </html>
-
