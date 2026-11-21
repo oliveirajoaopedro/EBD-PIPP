@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EBD - PIPP Acesso Restrito</title>
+    <title>EBD - PIPP</title>
 
     <!-- Rastreador de carregamento: marca cada biblioteca que NAO carregou -->
     <script>
@@ -17,6 +17,18 @@
     <!-- Bibliotecas externas (versoes fixadas = mais estavel que @latest) -->
     <script src="https://cdn.tailwindcss.com"
             onerror="window.__falhasDeCarregamento.push('Tailwind (estilos) - cdn.tailwindcss.com')"></script>
+    <script>
+        // Verde da identidade visual da PIPP (mesmos tons de pipp.org.br; 900 = cor principal #004411)
+        if (window.tailwind) {
+            tailwind.config = {
+                theme: { extend: { colors: { pipp: {
+                    50: '#f2faf5', 100: '#e2f3e7', 200: '#c3e4cd', 300: '#96caa4', 400: '#5fa874',
+                    500: '#2f8a48', 600: '#11732a', 700: '#065d1c', 800: '#025015', 900: '#004411', 950: '#00260a'
+                } } } }
+            };
+        }
+    </script>
+    <meta name="theme-color" content="#004411">
 
     <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
             onerror="window.__falhasDeCarregamento.push('React - unpkg.com')"></script>
@@ -25,7 +37,7 @@
     <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"
             onerror="window.__falhasDeCarregamento.push('Babel (traduz o codigo) - unpkg.com')"></script>
 
-    <script src="https://unpkg.com/lucide@0.263.1/dist/umd/lucide.min.js"
+    <script src="https://unpkg.com/lucide@0.263.0/dist/umd/lucide.min.js"
             onerror="window.__falhasDeCarregamento.push('Lucide (icones) - unpkg.com')"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
             onerror="window.__falhasDeCarregamento.push('Chart.js (graficos) - cdn.jsdelivr.net')"></script>
@@ -37,8 +49,8 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
         /* Toggle Switch */
-        .toggle-checkbox:checked { right: 0; border-color: #4f46e5; }
-        .toggle-checkbox:checked + .toggle-label { background-color: #4f46e5; }
+        .toggle-checkbox:checked { right: 0; border-color: #004411; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #004411; }
     </style>
 </head>
 <body class="text-slate-900 min-h-screen flex flex-col">
@@ -83,6 +95,35 @@
             <div className="text-center text-slate-400 text-sm font-medium py-8">{texto}</div>
         );
 
+        // Avisos: olha os últimos N domingos antes de hoje; quem faltou em todos gera aviso
+        const DOMINGOS_AVISO = 3;
+
+        const chaveDataLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+        // Domingos anteriores a hoje (o de hoje não conta), do mais recente para o mais antigo
+        const domingosAnteriores = (qtd) => {
+            const d = new Date();
+            d.setHours(12, 0, 0, 0);
+            d.setDate(d.getDate() - (d.getDay() === 0 ? 7 : d.getDay()));
+            const lista = [];
+            for (let i = 0; i < qtd; i++) {
+                lista.push(chaveDataLocal(d));
+                d.setDate(d.getDate() - 7);
+            }
+            return lista;
+        };
+        const CHAVE_CONTATOS = 'ebd_contatos_feitos';
+
+        const lerContatosFeitos = () => {
+            try { return JSON.parse(localStorage.getItem(CHAVE_CONTATOS)) || {}; } catch (e) { return {}; }
+        };
+
+        const formatarDataLonga = (dataKey) => {
+            if (!dataKey) return '-';
+            const partes = dataKey.split('-');
+            return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : dataKey;
+        };
+
         // ==========================================================
         // COMPONENTE DE ÍCONE BLINDADO
         // ==========================================================
@@ -94,8 +135,12 @@
                 }, [name]);
 
                 const svgHtml = useMemo(() => {
-                    if (window.lucide && window.lucide.icons && window.lucide.icons[iconName]) {
-                        return window.lucide.icons[iconName].toSvg({ class: className });
+                    // Lucide (UMD) monta o <svg> com createElement; transformamos em texto HTML
+                    const L = window.lucide;
+                    if (L && L.icons && L.icons[iconName] && L.createElement) {
+                        const svg = L.createElement(L.icons[iconName]);
+                        if (className) svg.setAttribute('class', className);
+                        return svg.outerHTML;
                     }
                     return null;
                 }, [iconName, className]);
@@ -110,7 +155,7 @@
         // ==========================================================
         // TELA DE LOGIN
         // ==========================================================
-        const LoginScreen = ({ onLogin }) => {
+        const LoginScreen = ({ onLogin, onCancel }) => {
             const [user, setUser] = useState('');
             const [pass, setPass] = useState('');
             const [error, setError] = useState('');
@@ -148,13 +193,16 @@
 
             return (
                 <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
-                    <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-slate-100 fade-in">
+                    <div className="relative bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-slate-100 fade-in">
+                        <button type="button" onClick={onCancel} className="absolute top-4 left-4 px-3 py-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition text-xs font-bold flex items-center gap-1">
+                            <Icon name="arrow-left" className="w-4 h-4" /> Voltar
+                        </button>
                         <div className="text-center mb-8">
-                            <div className="bg-indigo-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-600">
+                            <div className="bg-pipp-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 text-pipp-800">
                                 <Icon name="lock" className="w-8 h-8" />
                             </div>
                             <h1 className="text-2xl font-black text-slate-800">Área Restrita</h1>
-                            <p className="text-slate-400 text-sm mt-1">Acesso exclusivo para professores</p>
+                            <p className="text-slate-400 text-sm mt-1">Acesso exclusivo para professores e secretaria</p>
                         </div>
 
                         <form onSubmit={handleLogin} className="space-y-4">
@@ -166,7 +214,7 @@
                                         type="text"
                                         value={user}
                                         onChange={(e) => setUser(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-pipp-600"
                                         placeholder="Digite seu usuário"
                                     />
                                 </div>
@@ -180,7 +228,7 @@
                                         type="password"
                                         value={pass}
                                         onChange={(e) => setPass(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-pipp-600"
                                         placeholder="Digite sua senha"
                                     />
                                 </div>
@@ -193,7 +241,7 @@
                                 </div>
                             )}
 
-                            <button type="submit" disabled={loading || !user || !pass} className="w-full bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-indigo-700 transition-all transform active:scale-[0.98] mt-4 flex justify-center items-center gap-2 disabled:opacity-50">
+                            <button type="submit" disabled={loading || !user || !pass} className="w-full bg-pipp-900 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-pipp-800 transition-all transform active:scale-[0.98] mt-4 flex justify-center items-center gap-2 disabled:opacity-50">
                                 {loading ? 'Validando...' : <>Entrar no Sistema <Icon name="arrow-right" className="w-4 h-4" /></>}
                             </button>
                         </form>
@@ -207,12 +255,58 @@
         };
 
         // ==========================================================
+        // TELA INICIAL: dois caminhos (estatísticas públicas ou área restrita)
+        // ==========================================================
+        const TelaInicial = ({ onEstatisticas, onAreaRestrita }) => (
+            <div className="min-h-screen flex flex-col bg-slate-50 fade-in">
+                <header className="bg-pipp-900 text-white pt-12 pb-24 px-6 shadow-lg relative overflow-hidden">
+                    <div className="absolute inset-0 bg-pipp-950/30"></div>
+                    <div className="relative z-10 max-w-3xl mx-auto text-center">
+                        <h1 className="text-3xl sm:text-4xl font-black tracking-tight flex items-center justify-center gap-3">
+                            <Icon name="book-open" className="w-10 h-10 text-pipp-300" />
+                            EBD Digital
+                        </h1>
+                        <p className="text-pipp-100 font-medium mt-2">PIPP - Planaltina DF</p>
+                    </div>
+                </header>
+                <main className="max-w-3xl w-full mx-auto px-4 -mt-14 relative z-20 flex-grow pb-12">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <button type="button" onClick={onEstatisticas} className="bg-white rounded-3xl p-8 shadow-xl border border-slate-100 text-left hover:shadow-2xl hover:-translate-y-1 transition-all group">
+                            <div className="bg-pipp-50 text-pipp-800 w-16 h-16 rounded-2xl flex items-center justify-center mb-5">
+                                <Icon name="bar-chart-2" className="w-8 h-8" />
+                            </div>
+                            <p className="text-2xl font-black text-slate-800">Estatísticas</p>
+                            <p className="text-sm text-slate-400 mt-1">Presença, turmas e visitantes. Aberto para todos.</p>
+                            <p className="text-sm font-bold text-pipp-800 mt-5 flex items-center gap-1">Ver estatísticas <Icon name="arrow-right" className="w-4 h-4" /></p>
+                        </button>
+                        <button type="button" onClick={onAreaRestrita} className="bg-white rounded-3xl p-8 shadow-xl border border-slate-100 text-left hover:shadow-2xl hover:-translate-y-1 transition-all group">
+                            <div className="bg-pipp-50 text-pipp-800 w-16 h-16 rounded-2xl flex items-center justify-center mb-5">
+                                <Icon name="lock" className="w-8 h-8" />
+                            </div>
+                            <p className="text-2xl font-black text-slate-800">Área Restrita</p>
+                            <p className="text-sm text-slate-400 mt-1">Chamada, mapa de faltas e avisos. Professores e secretaria.</p>
+                            <p className="text-sm font-bold text-pipp-800 mt-5 flex items-center gap-1">Entrar <Icon name="arrow-right" className="w-4 h-4" /></p>
+                        </button>
+                    </div>
+                </main>
+                <footer className="py-8 text-center bg-white border-t border-slate-50">
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-300">© 2026 PIPP</p>
+                </footer>
+            </div>
+        );
+
+        // ==========================================================
         // APP PRINCIPAL (CORRIGIDO)
         // ==========================================================
         const App = () => {
             // ESTADOS (Hooks devem ficar sempre no topo)
             const [isLoggedIn, setIsLoggedIn] = useState(false);
-            const [activeTab, setActiveTab] = useState('chamada');
+            // Sem login: activeTab = 'inicio' (tela inicial) ou 'dashboard' (estatísticas públicas).
+            // loginPara: null = sem tela de login; senão, a aba que abre depois de entrar.
+            const [loginPara, setLoginPara] = useState(null);
+            const [activeTab, setActiveTab] = useState('inicio');
+            const [contatosFeitos, setContatosFeitos] = useState(lerContatosFeitos);
+            const [mostrarContatados, setMostrarContatados] = useState(false);
             const [loading, setLoading] = useState(false);
             const [message, setMessage] = useState(null);
 
@@ -784,6 +878,61 @@
                 return alunosAtivosDisponiveis.filter(nome => !alunosNaTurma.has(nome));
             }, [alunosAtivosDisponiveis, alunos]);
 
+            // Avisos de faltas: olha só os últimos DOMINGOS_AVISO domingos antes de hoje e avisa
+            // de quem tem falta registrada em todos eles. Ignora o filtro de período.
+            // Se a turma não fez chamada em algum desses domingos, ninguém dela entra no aviso.
+            const domingosVerificados = useMemo(() => domingosAnteriores(DOMINGOS_AVISO), [dashboardData]);
+
+            const alertasFaltas = useMemo(() => {
+                if (!dashboardData || !dashboardData.mapaAlunosPorTurma) return null;
+                const lista = [];
+                Object.keys(dashboardData.mapaAlunosPorTurma).forEach(turma => {
+                    const registros = dashboardData.mapaAlunosPorTurma[turma] || [];
+                    const porAluno = {};
+                    registros.forEach(r => {
+                        if (!porAluno[r.aluno]) porAluno[r.aluno] = {};
+                        porAluno[r.aluno][r.data] = r.status;
+                    });
+                    Object.keys(porAluno).forEach(aluno => {
+                        const status = porAluno[aluno];
+                        if (!domingosVerificados.every(d => status[d] === 'Ausente')) return;
+                        // Início da sequência de faltas (pode ser antes dos 3 domingos) e última presença
+                        const datas = Object.keys(status).sort().reverse();
+                        let i = 0;
+                        while (i < datas.length && status[datas[i]] === 'Ausente') i++;
+                        const inicioFaltas = datas[i - 1];
+                        const ultimaPresenca = datas.slice(i).find(d => status[d] === 'Presente');
+                        const chave = `${turma}|${aluno}`;
+                        lista.push({
+                            chave,
+                            aluno,
+                            turma,
+                            inicioFaltas,
+                            ultimaPresenca,
+                            // "Já entrei em contato" vale para esta sequência de faltas; se o aluno
+                            // voltar e começar a faltar de novo, o aviso reaparece.
+                            contatado: contatosFeitos[chave] === inicioFaltas
+                        });
+                    });
+                });
+                return lista.sort((a, b) => a.turma.localeCompare(b.turma, 'pt-BR') || a.aluno.localeCompare(b.aluno, 'pt-BR'));
+            }, [dashboardData, contatosFeitos, domingosVerificados]);
+
+            const marcarContato = (alerta, feito) => {
+                setContatosFeitos(prev => {
+                    const novo = { ...prev };
+                    if (feito) novo[alerta.chave] = alerta.inicioFaltas;
+                    else delete novo[alerta.chave];
+                    try { localStorage.setItem(CHAVE_CONTATOS, JSON.stringify(novo)); } catch (e) {}
+                    return novo;
+                });
+            };
+
+            const sair = () => {
+                setIsLoggedIn(false);
+                setActiveTab('inicio');
+            };
+
             // --- HOOKS (EFEITOS) NO TOPO ---
             // IMPORTANTE: Eles devem ser declarados ANTES de qualquer "return"
 
@@ -795,8 +944,8 @@
             }, [isLoggedIn]);
 
             useEffect(() => {
-                // Só carrega dashboard se estiver logado e na aba certa
-                if (isLoggedIn && activeTab === 'dashboard') {
+                // Estatísticas são públicas: carrega sempre que a aba estiver aberta
+                if (activeTab === 'dashboard') {
                     carregarDashboard();
                 }
             }, [activeTab, isLoggedIn]);
@@ -804,7 +953,7 @@
             // Gráfico: Evolução Geral por Domingo (linha % + barras de total)
             useEffect(() => {
                 const historico = historicoGeralFiltrado;
-                if (isLoggedIn && activeTab === 'dashboard' && historico && historico.length > 0 && chartGeralRef.current) {
+                if (activeTab === 'dashboard' && historico && historico.length > 0 && chartGeralRef.current) {
                     if (chartGeralInstance.current) chartGeralInstance.current.destroy();
 
                     const labels = historico.map(h => formatarDataCurta(h.data));
@@ -815,8 +964,8 @@
                         data: {
                             labels,
                             datasets: [
-                                { type: 'bar', label: 'Total de Chamadas', data: totais, backgroundColor: '#c7d2fe', borderRadius: 4, yAxisID: 'yTotal', order: 2 },
-                                { type: 'line', label: '% Presença', data: percentuais, borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.3, yAxisID: 'yPct', order: 1 }
+                                { type: 'bar', label: 'Total de Chamadas', data: totais, backgroundColor: '#c3e4cd', borderRadius: 4, yAxisID: 'yTotal', order: 2 },
+                                { type: 'line', label: '% Presença', data: percentuais, borderColor: '#004411', backgroundColor: '#004411', tension: 0.3, yAxisID: 'yPct', order: 1 }
                             ]
                         },
                         options: {
@@ -834,7 +983,7 @@
 
             // Gráfico: Ranking de Turmas (barras horizontais por % de presença)
             useEffect(() => {
-                if (isLoggedIn && activeTab === 'dashboard' && rankingTurmas.length > 0 && chartRankingRef.current) {
+                if (activeTab === 'dashboard' && rankingTurmas.length > 0 && chartRankingRef.current) {
                     if (chartRankingInstance.current) chartRankingInstance.current.destroy();
 
                     chartRankingInstance.current = new Chart(chartRankingRef.current, {
@@ -844,7 +993,7 @@
                             datasets: [{
                                 label: '% Presença',
                                 data: rankingTurmas.map(r => +r.percentual.toFixed(1)),
-                                backgroundColor: '#4f46e5',
+                                backgroundColor: '#004411',
                                 borderRadius: 5
                             }]
                         },
@@ -868,7 +1017,7 @@
             // Gráfico: Evolução por Turma (filtrado por turma e por intervalo de datas)
             useEffect(() => {
                 const historico = historicoTurmaFiltrado;
-                if (isLoggedIn && activeTab === 'dashboard' && historico && historico.length > 0 && chartTurmaRef.current) {
+                if (activeTab === 'dashboard' && historico && historico.length > 0 && chartTurmaRef.current) {
                     if (chartTurmaInstance.current) chartTurmaInstance.current.destroy();
 
                     const labels = historico.map(h => formatarDataCurta(h.data));
@@ -902,7 +1051,7 @@
             // Gráfico: Evolução de Visitantes por Domingo
             useEffect(() => {
                 const historico = historicoVisitantesGeralFiltrado;
-                if (isLoggedIn && activeTab === 'dashboard' && historico && historico.length > 0 && chartVisitantesRef.current) {
+                if (activeTab === 'dashboard' && historico && historico.length > 0 && chartVisitantesRef.current) {
                     if (chartVisitantesInstance.current) chartVisitantesInstance.current.destroy();
 
                     const labels = historico.map(h => formatarDataCurta(h.data));
@@ -924,7 +1073,7 @@
             }, [historicoVisitantesGeralFiltrado, activeTab, isLoggedIn]);
 
             useEffect(() => {
-                if (isLoggedIn && activeTab === 'dashboard' && professoresNoPeriodo.length > 0 && chartProfessoresRef.current) {
+                if (activeTab === 'dashboard' && professoresNoPeriodo.length > 0 && chartProfessoresRef.current) {
                     if (chartProfessoresInstance.current) chartProfessoresInstance.current.destroy();
 
                     const topProfessores = professoresNoPeriodo.slice(0, 8);
@@ -968,41 +1117,72 @@
 
             // --- RENDERIZAÇÃO CONDICIONAL ---
             // Agora que todos os hooks foram declarados, podemos retornar a tela de login
-            if (!isLoggedIn) {
-                return <LoginScreen onLogin={() => setIsLoggedIn(true)} />;
+            // Sem login: só a aba de Estatísticas (sem nomes de alunos/visitantes).
+            // A tela de login abre por cima, como janela.
+            if (!isLoggedIn && loginPara) {
+                return (
+                    <LoginScreen
+                        onLogin={() => { setActiveTab(loginPara); setIsLoggedIn(true); setLoginPara(null); }}
+                        onCancel={() => { setLoginPara(null); setActiveTab('inicio'); }}
+                    />
+                );
+            }
+            if (!isLoggedIn && activeTab === 'inicio') {
+                return (
+                    <TelaInicial
+                        onEstatisticas={() => setActiveTab('dashboard')}
+                        onAreaRestrita={() => setLoginPara('chamada')}
+                    />
+                );
             }
 
-            // --- TELA PRINCIPAL (APÓS LOGIN) ---
             return (
                 <div className="flex flex-col min-h-screen fade-in">
                     {/* Header */}
-                    <header className="bg-indigo-700 text-white p-6 shadow-lg relative overflow-hidden">
-                        <div className="absolute inset-0 bg-indigo-900/30"></div>
+                    <header className="bg-pipp-900 text-white p-6 shadow-lg relative overflow-hidden">
+                        <div className="absolute inset-0 bg-pipp-950/30"></div>
                         <div className="relative z-10 max-w-3xl mx-auto flex justify-between items-center">
                             <div>
                                 <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
-                                    <Icon name="book-open" className="w-8 h-8 text-indigo-300" />
+                                    <Icon name="book-open" className="w-8 h-8 text-pipp-300" />
                                     EBD Digital
                                 </h1>
-                                <p className="text-indigo-100 text-sm font-medium mt-1 pl-10">PIPP - Planaltina DF</p>
+                                <p className="text-pipp-100 text-sm font-medium mt-1 pl-10">PIPP - Planaltina DF</p>
                             </div>
-                            <button onClick={() => setIsLoggedIn(false)} className="bg-indigo-800 p-2 rounded-lg hover:bg-indigo-900 transition text-xs font-bold uppercase flex items-center gap-2">
-                                <Icon name="log-out" className="w-4 h-4" /> Sair
-                            </button>
+                            {isLoggedIn ? (
+                                <button onClick={sair} className="bg-pipp-950/60 p-2 rounded-lg hover:bg-pipp-950 transition text-xs font-bold uppercase flex items-center gap-2">
+                                    <Icon name="log-out" className="w-4 h-4" /> Sair
+                                </button>
+                            ) : (
+                                <button onClick={() => setActiveTab('inicio')} className="bg-pipp-950/60 p-2 rounded-lg hover:bg-pipp-950 transition text-xs font-bold uppercase flex items-center gap-2">
+                                    <Icon name="home" className="w-4 h-4" /> Início
+                                </button>
+                            )}
                         </div>
                     </header>
 
                     <main className={`mx-auto px-4 -mt-6 w-full flex-grow relative z-20 pb-12 transition-all ${activeTab === 'dashboard' ? 'max-w-6xl' : 'max-w-3xl'}`}>
 
-                        {/* Abas */}
+                        {/* Abas (só com login; sem login a página mostra apenas as estatísticas públicas) */}
+                        {!isLoggedIn && (
+                            <div className="bg-white p-4 rounded-2xl shadow-lg mb-6 border border-slate-100 flex items-center gap-3">
+                                <div className="bg-pipp-50 text-pipp-800 p-2 rounded-xl"><Icon name="bar-chart-2" className="w-5 h-5" /></div>
+                                <div>
+                                    <p className="font-black text-slate-800">Estatísticas da EBD</p>
+                                    <p className="text-xs text-slate-400 font-medium">Página pública. Nomes de alunos e avisos ficam na Área Restrita.</p>
+                                </div>
+                            </div>
+                        )}
+                        {isLoggedIn && (
                         <div className="flex bg-white p-1 rounded-2xl shadow-lg mb-6 border border-slate-100">
-                            <button onClick={() => setActiveTab('chamada')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'chamada' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
+                            <button onClick={() => setActiveTab('chamada')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'chamada' ? 'bg-pipp-900 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
                                 <Icon name="check-circle" className="w-5 h-5" /> Chamada
                             </button>
-                            <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
+                            <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'dashboard' ? 'bg-pipp-900 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
                                 <Icon name="bar-chart-2" className="w-5 h-5" /> Estatísticas
                             </button>
                         </div>
+                        )}
 
                         {/* Mensagens */}
                         {message && (
@@ -1012,10 +1192,10 @@
                         )}
 
                         {/* Chamada */}
-                        {activeTab === 'chamada' && (
+                        {isLoggedIn && activeTab === 'chamada' && (
                             <div className="fade-in space-y-6">
                                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-                                    <div className="flex items-center gap-2 mb-6 text-indigo-900 border-b border-slate-100 pb-2">
+                                    <div className="flex items-center gap-2 mb-6 text-pipp-900 border-b border-slate-100 pb-2">
                                         <Icon name="settings" className="w-5 h-5" />
                                         <h2 className="font-black text-lg uppercase">Configuração</h2>
                                     </div>
@@ -1023,11 +1203,11 @@
                                     <div className="grid md:grid-cols-2 gap-4">
                                         <div>
                                             <label className="text-xs font-bold text-slate-500 uppercase ml-1">Data</label>
-                                            <input type="date" name="dataAula" value={formData.dataAula} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 mt-1 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                            <input type="date" name="dataAula" value={formData.dataAula} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 mt-1 focus:ring-2 focus:ring-pipp-600 outline-none" />
                                         </div>
                                         <div>
                                             <label className="text-xs font-bold text-slate-500 uppercase ml-1">Professor</label>
-                                            <select name="professor" value={formData.professor} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 mt-1 font-medium focus:ring-2 focus:ring-indigo-500 outline-none">
+                                            <select name="professor" value={formData.professor} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 mt-1 font-medium focus:ring-2 focus:ring-pipp-600 outline-none">
                                                 <option value="">Selecione um professor</option>
                                                 {professores.map((prof) => (
                                                     <option key={prof} value={prof}>{prof}</option>
@@ -1042,7 +1222,7 @@
                                             </select>
                                         </div>
                                         <div>
-                                            <select name="turma" value={formData.turma} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-medium focus:ring-2 focus:ring-indigo-500 outline-none">
+                                            <select name="turma" value={formData.turma} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-medium focus:ring-2 focus:ring-pipp-600 outline-none">
                                                 <option value="">Selecione a Turma...</option>
                                                 {TURMAS.map(t => <option key={t} value={t}>{t}</option>)}
                                             </select>
@@ -1050,11 +1230,11 @@
                                     </div>
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
-                                        <button onClick={carregarAlunos} disabled={loading} className="bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex justify-center items-center gap-2">
+                                        <button onClick={carregarAlunos} disabled={loading} className="bg-pipp-900 text-white font-bold py-3.5 rounded-xl shadow hover:bg-pipp-800 transition-colors flex justify-center items-center gap-2">
                                             {loading ? "Carregando..." : <><Icon name="search" className="w-4 h-4" /> Nova Chamada</>}
                                         </button>
                                         <button onClick={carregarChamadaExistente} disabled={loading} className="bg-slate-700 text-white font-bold py-3.5 rounded-xl shadow hover:bg-slate-800 transition-colors flex justify-center items-center gap-2">
-                                            {loading ? "Carregando..." : <><Icon name="edit-3" className="w-4 h-4" /> Editar Chamada</>}
+                                            {loading ? "Carregando..." : <><Icon name="pen-line" className="w-4 h-4" /> Editar Chamada</>}
                                         </button>
                                     </div>
                                 </div>
@@ -1063,11 +1243,11 @@
                                     <>
                                         {modoEdicao && (
                                             <div className="bg-slate-800 text-white text-sm font-bold px-5 py-3 rounded-2xl flex items-center gap-2 fade-in">
-                                                <Icon name="edit-3" className="w-4 h-4 flex-shrink-0" />
+                                                <Icon name="pen-line" className="w-4 h-4 flex-shrink-0" />
                                                 Editando a chamada de {formatarDataCurta(formData.dataAula)} — ajuste os status e salve as alterações.
                                             </div>
                                         )}
-                                        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 fade-in border-l-4 border-l-indigo-500">
+                                        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 fade-in border-l-4 border-l-pipp-600">
                                             <div className="flex justify-between items-center mb-6">
                                                 <h3 className="font-black text-lg text-slate-800">Lista de Presença</h3>
                                                 <span className="text-xs font-bold bg-slate-100 px-3 py-1 rounded-full">{alunos.length} Alunos</span>
@@ -1081,12 +1261,12 @@
                                                     </div>
                                                     <div className="space-y-3">
                                                         {alunos.map((aluno, idx) => (
-                                                            <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border ${aluno.presente ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                                                                <span className={`font-bold text-sm ${aluno.presente ? 'text-indigo-900' : 'text-slate-500'}`}>{aluno.nome}</span>
+                                                            <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border ${aluno.presente ? 'bg-pipp-50 border-pipp-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                                                                <span className={`font-bold text-sm ${aluno.presente ? 'text-pipp-900' : 'text-slate-500'}`}>{aluno.nome}</span>
                                                                 <div className="flex items-center gap-4">
                                                                     <div className="relative inline-block w-12 h-6 align-middle select-none">
-                                                                        <input type="checkbox" checked={aluno.presente} onChange={() => togglePresenca(idx)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 left-0 top-0 border-slate-300 shadow-sm" style={{right: aluno.presente ? '0' : 'auto', left: aluno.presente ? 'auto' : '0', borderColor: aluno.presente ? '#4f46e5' : '#e2e8f0'}} />
-                                                                        <div className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-300 ${aluno.presente ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
+                                                                        <input type="checkbox" checked={aluno.presente} onChange={() => togglePresenca(idx)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 left-0 top-0 border-slate-300 shadow-sm" style={{right: aluno.presente ? '0' : 'auto', left: aluno.presente ? 'auto' : '0', borderColor: aluno.presente ? '#004411' : '#e2e8f0'}} />
+                                                                        <div className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-300 ${aluno.presente ? 'bg-pipp-900' : 'bg-slate-300'}`}></div>
                                                                     </div>
                                                                     {!modoEdicao && (
                                                                         <button onClick={() => removerAlunoDaChamada(aluno.nome)} disabled={loading} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors">
@@ -1108,14 +1288,14 @@
                                                         <select
                                                             value={novoAlunoChamada}
                                                             onChange={(e) => setNovoAlunoChamada(e.target.value)}
-                                                            className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                            className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 font-medium focus:ring-2 focus:ring-pipp-600 outline-none"
                                                         >
                                                             <option value="">Selecione um aluno ativo</option>
                                                             {alunosDisponiveisParaChamada.map((nome) => (
                                                                 <option key={nome} value={nome}>{nome}</option>
                                                             ))}
                                                         </select>
-                                                        <button onClick={adicionarAlunoNaChamada} disabled={loading || !novoAlunoChamada} className="bg-indigo-600 text-white font-bold px-5 rounded-xl shadow hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+                                                        <button onClick={adicionarAlunoNaChamada} disabled={loading || !novoAlunoChamada} className="bg-pipp-900 text-white font-bold px-5 rounded-xl shadow hover:bg-pipp-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
                                                             <Icon name="user-plus" className="w-4 h-4" /> Adicionar
                                                         </button>
                                                     </div>
@@ -1190,11 +1370,11 @@
                                         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-end gap-3">
                                             <div>
                                                 <label className="text-xs font-bold text-slate-500 uppercase block mb-1 ml-1">De</label>
-                                                <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                                <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-sm font-medium focus:ring-2 focus:ring-pipp-600 outline-none" />
                                             </div>
                                             <div>
                                                 <label className="text-xs font-bold text-slate-500 uppercase block mb-1 ml-1">Até</label>
-                                                <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                                <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-sm font-medium focus:ring-2 focus:ring-pipp-600 outline-none" />
                                             </div>
                                             <div className="flex gap-2 ml-auto">
                                                 <button onClick={() => { const ano = new Date().getFullYear(); setDataInicio(`${ano}-01-01`); setDataFim(`${ano}-06-30`); }} className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">1º Semestre</button>
@@ -1207,7 +1387,7 @@
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
                                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Total Alunos</p>
-                                                <p className="text-3xl font-black text-indigo-600">{dashboardData.totalAtivos}</p>
+                                                <p className="text-3xl font-black text-pipp-800">{dashboardData.totalAtivos}</p>
                                             </div>
                                             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center">
                                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Presença Média</p>
@@ -1265,7 +1445,7 @@
                                                                     <p className="font-bold text-sm text-slate-800">{r.turma}</p>
                                                                     <p className="text-xs text-slate-400">{r.alunos} alunos · {r.domingosRegistrados} domingo{r.domingosRegistrados === 1 ? '' : 's'} registrado{r.domingosRegistrados === 1 ? '' : 's'}</p>
                                                                 </div>
-                                                                <span className="font-black text-indigo-600">{r.percentual.toFixed(0)}%</span>
+                                                                <span className="font-black text-pipp-800">{r.percentual.toFixed(0)}%</span>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -1284,7 +1464,7 @@
                                                     <button
                                                         type="button"
                                                         onClick={() => setOrdenarAlunosAZ(prev => !prev)}
-                                                        className={`px-4 py-2 rounded-xl text-sm font-bold border transition-colors ${ordenarAlunosAZ ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+                                                        className={`px-4 py-2 rounded-xl text-sm font-bold border transition-colors ${ordenarAlunosAZ ? 'bg-pipp-900 text-white border-pipp-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
                                                     >
                                                         {ordenarAlunosAZ ? 'Ordem A-Z ativa' : 'Ordenar A-Z'}
                                                     </button>
@@ -1305,9 +1485,10 @@
                                                     )}
                                                 </div>
 
-                                                <div>
+                                                {/* Mapa de faltas: só com login (mostra nomes) */}
+                                                <div className={isLoggedIn ? '' : 'hidden'}>
                                                     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Mapa de Faltas por Aluno</p>
-                                                    {dashboardData.mapaAlunosPorTurma === undefined ? (
+                                                    {!isLoggedIn ? null : dashboardData.mapaAlunosPorTurma === undefined ? (
                                                         <AvisoBackend texto="O backend ainda não está enviando o mapa de faltas por aluno." />
                                                     ) : !mapaFaltasPivot || mapaFaltasPivot.alunosList.length === 0 ? (
                                                         <AvisoVazio texto="Nenhum registro de chamada nesta turma no período." />
@@ -1384,13 +1565,14 @@
                                             ) : historicoVisitantesGeralFiltrado.length === 0 ? (
                                                 <AvisoVazio texto="Nenhuma visita registrada neste período." />
                                             ) : (
-                                                <div className="relative h-56 w-full mb-8">
+                                                <div className={`relative h-56 w-full ${isLoggedIn ? 'mb-8' : ''}`}>
                                                     <canvas ref={chartVisitantesRef}></canvas>
                                                 </div>
                                             )}
 
-                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Contatos de Visitantes</p>
-                                            {dashboardData.mapaVisitantesPorTurma === undefined ? (
+                                            {/* Contatos de visitantes: só com login */}
+                                            {isLoggedIn && <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Contatos de Visitantes</p>}
+                                            {!isLoggedIn ? null : dashboardData.mapaVisitantesPorTurma === undefined ? (
                                                 <AvisoBackend texto="O backend ainda não está enviando o mapa de visitantes." />
                                             ) : !contatosVisitantes || contatosVisitantes.length === 0 ? (
                                                 <AvisoVazio texto="Nenhuma visita registrada ainda." />
@@ -1451,15 +1633,17 @@
                                                         </div>
                                                     </div>
 
+                                                    {/* Ranking e resumo individual de professores: só com login */}
+                                                    {!isLoggedIn ? null : (
                                                     <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-6">
-                                                        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4">
+                                                        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 min-w-0">
                                                             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Ranking de Professores</p>
                                                             <div className="relative h-72 w-full">
                                                                 <canvas ref={chartProfessoresRef}></canvas>
                                                             </div>
                                                         </div>
 
-                                                        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4">
+                                                        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 min-w-0">
                                                             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Resumo Individual</p>
                                                             <div className="space-y-3 max-h-72 overflow-auto pr-1">
                                                                 {professoresNoPeriodo.map((prof) => (
@@ -1477,9 +1661,82 @@
                                                             </div>
                                                         </div>
                                                     </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
+
+                                        {/* Avisos de faltas: no final, só com login */}
+                                        {isLoggedIn && (() => {
+                                            const pendentes = alertasFaltas ? alertasFaltas.filter(a => !a.contatado) : [];
+                                            const contatados = alertasFaltas ? alertasFaltas.filter(a => a.contatado) : [];
+                                            const datasTexto = [...domingosVerificados].reverse().map(formatarDataCurta);
+                                            const listaDatas = datasTexto.slice(0, -1).join(', ') + ' e ' + datasTexto[datasTexto.length - 1];
+                                            const CartaoAlerta = ({ a }) => (
+                                                <div className={`p-4 rounded-2xl border flex flex-wrap items-center gap-3 ${a.contatado ? 'bg-slate-50 border-slate-100' : 'bg-red-50 border-red-100'}`}>
+                                                    <div className={`${a.contatado ? 'bg-slate-100 text-slate-400' : 'bg-red-100 text-red-600'} w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0`}>
+                                                        <Icon name="user-x" className="w-5 h-5" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-[10rem]">
+                                                        <p className="font-bold text-slate-800">{a.aluno}</p>
+                                                        <p className="text-xs text-slate-500">
+                                                            {a.turma} · última presença: {a.ultimaPresenca ? formatarDataLonga(a.ultimaPresenca) : 'nenhuma registrada'}
+                                                        </p>
+                                                    </div>
+                                                    {a.contatado ? (
+                                                        <button type="button" onClick={() => marcarContato(a, false)} className="text-xs font-bold px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:bg-slate-100 transition-colors flex items-center gap-1">
+                                                            <Icon name="rotate-ccw" className="w-3.5 h-3.5" /> Desfazer
+                                                        </button>
+                                                    ) : (
+                                                        <button type="button" onClick={() => marcarContato(a, true)} className="text-xs font-bold px-3 py-2 rounded-xl bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-colors flex items-center gap-1">
+                                                            <Icon name="phone" className="w-3.5 h-3.5" /> Já entrei em contato
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                            return (
+                                                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                                                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                                            <Icon name="bell" className="w-5 h-5 text-red-500" /> Avisos: alunos que precisam de contato
+                                                        </h3>
+                                                        {pendentes.length > 0 && (
+                                                            <span className="text-xs font-bold bg-red-50 text-red-600 px-3 py-1 rounded-full">
+                                                                {pendentes.length} aviso{pendentes.length === 1 ? '' : 's'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-slate-400 mb-5">
+                                                        Alunos que faltaram nos {DOMINGOS_AVISO} últimos domingos ({listaDatas}). Não depende do filtro de período.
+                                                    </p>
+                                                    {alertasFaltas === null ? (
+                                                        <AvisoBackend texto="O backend ainda não está enviando o mapa de faltas por aluno." />
+                                                    ) : pendentes.length === 0 ? (
+                                                        <div className="bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-2xl p-4 flex items-center gap-3 text-sm font-medium">
+                                                            <Icon name="check-circle" className="w-5 h-5 flex-shrink-0" />
+                                                            <span>Nenhum aluno faltou nos {DOMINGOS_AVISO} últimos domingos aguardando contato.</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-2">
+                                                            {pendentes.map(a => <CartaoAlerta key={a.chave} a={a} />)}
+                                                        </div>
+                                                    )}
+                                                    {contatados.length > 0 && (
+                                                        <div className="mt-4">
+                                                            <button type="button" onClick={() => setMostrarContatados(v => !v)} className="text-xs font-bold text-slate-500 hover:text-slate-700 flex items-center gap-1">
+                                                                <Icon name={mostrarContatados ? 'chevron-up' : 'chevron-down'} className="w-4 h-4" />
+                                                                Já contatados ({contatados.length})
+                                                            </button>
+                                                            {mostrarContatados && (
+                                                                <div className="space-y-2 mt-3">
+                                                                    {contatados.map(a => <CartaoAlerta key={a.chave} a={a} />)}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </>
                                 )}
                             </div>
